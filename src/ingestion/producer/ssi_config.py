@@ -2,7 +2,7 @@ auth_type = 'Bearer'
 
 
 consumerID = 'cb751a5fff2345488f3a20b8137f048f'
-consumerSecret = 'b133c5c1ac274b92b0852eb644eddb76'
+consumerSecret = '71532e139f5947909f5d5e15893a49d7'
 
 access_jwt = ''
 
