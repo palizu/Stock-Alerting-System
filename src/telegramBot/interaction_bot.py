@@ -1,5 +1,6 @@
 from ast import Call
 import logging
+from turtle import up
 from gevent import config
 from telegram import Update
 import bot_configs
@@ -39,7 +40,6 @@ class InterationBot():
         self.application.add_handler(CommandHandler('list', self.list_condition))
         self.application.add_handler(CommandHandler('add', self.add_condition))
         self.application.add_handler(MessageHandler(filters.COMMAND, self.unknown))
-        self.application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), self.echo))
 
     async def start(self, update: Update, context: CallbackContext.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
@@ -58,7 +58,7 @@ class InterationBot():
     async def list_condition(self, update: Update, context: CallbackContext.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
         logging.info(f"List condition command at chat: {chat_id}")
-        select_query = "SELECT * from USER_ALERT_CONDITION where chat_id = %s"
+        select_query = "SELECT * FROM user_alert_condition WHERE chat_id = %s"
         self.cursor.execute(select_query, (chat_id,))
         rows = self.cursor.fetchone()
         if rows is None: 
@@ -79,16 +79,33 @@ class InterationBot():
 
     async def add_condition(self, update: Update, context: CallbackContext):
         chat_id = update.effective_chat.id
-        
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Sorry, I didn't understand that command.")
-
+        args = context.args
+        ticker = args[0]
+        type = args[1]
+        threshold = int(args[2])
+        if ticker.upper() not in bot_configs.SYMBOL_LIST:
+            message = f"{ticker.upper()} is not supported yet"
+        elif type.upper() not in bot_configs.TYPE_LIST:
+            message = bot_configs.ADD_CONDITION_WRONG_FORMAT_MSG
+        elif threshold < 0:
+            message = bot_configs.NEGATIVE_THRESHOLD_MSG
+        else:
+            select_query = "SELECT * FROM user_alert_condition WHERE chat_id = %s and ticker = %s"
+            self.cursor.execute(select_query, (chat_id, ticker))
+            row = self.cursor.fetchone()
+            if row is None:
+                insert_query = f"INSERT INTO user_alert_condition (chat_id, ticker, {type}) values (%s, %s, %s)"
+                self.cursor.execute(insert_query, (chat_id, ticker, threshold))
+                self.connection.commit()
+            else:
+                update_query = f"UPDATE user_alert_condition set {type} = {threshold} where chat_id = {chat_id} and ticker = {ticker}"
+                self.cursor.execute(update_query)
+                self.connection.commit()
+            message = "Alert added successfully! User /list to see all your alert"
+        await context.bot.send_message(chat_id=chat_id, text=message)
 
     async def unknown(update: Update, context: CallbackContext.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=update.effective_chat.id, text="Sorry, I didn't understand that command.")
-
-    async def echo(self, update: Update, context: CallbackContext.DEFAULT_TYPE):
-        print(type(update.effective_chat.id))
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=update.message.text)
 
 
 if __name__ == '__main__':
