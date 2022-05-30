@@ -36,6 +36,7 @@ class InteractiveBot():
         self.application.add_handler(CommandHandler('start', self.start))
         self.application.add_handler(CommandHandler('list', self.list_condition))
         self.application.add_handler(CommandHandler('add', self.add_condition))
+        self.application.add_handler(CommandHandler('remove', self.remove_condition))
         self.application.add_handler(MessageHandler(filters.COMMAND, self.unknown))
 
 
@@ -45,6 +46,7 @@ class InteractiveBot():
         select_query = "SELECT * FROM user WHERE chat_id = %s"
         self.cursor.execute(select_query, (chat_id,))
         rows = self.cursor.fetchone()
+        
         if rows is None:    
             insert_query = "INSERT INTO user (chat_id) VALUES (%s)"
             new_user_info = (chat_id,)
@@ -60,6 +62,7 @@ class InteractiveBot():
         select_query = "SELECT * FROM user_alert_condition WHERE chat_id = %s"
         self.cursor.execute(select_query, (chat_id,))
         row = self.cursor.fetchone()
+        
         if row is None: 
             message = bot_configs.NO_CONDITION_MESSAGE
             logging.info(f"List condition at chat id {chat_id}: Did not find any condition")
@@ -80,14 +83,21 @@ class InteractiveBot():
     async def add_condition(self, update: Update, context: CallbackContext):
         chat_id = update.effective_chat.id
         args = context.args
+
+        if len(args) != 3:
+            message = "Invalid command arguments!\nThe syntax is: /add \{ticker\} \{upper/lower\} \{threshold\}"
+            await context.bot.send_message(chat_id=chat_id, text=message)
+            return
+
         ticker = args[0].upper()
         type = args[1].upper()
         threshold = float(args[2])
+
         if ticker.upper() not in bot_configs.SYMBOL_LIST:
-            message = f"{ticker} is not supported yet"
+            message = bot_configs.UNSUPPORTED_TICKER_MSG + ticker
             logging.info(f"User update condition failed at chat id {chat_id} -- REASON -- Ticker is not supported: {ticker}")
         elif type not in bot_configs.TYPE_LIST:
-            message = bot_configs.WRONG_RULE_CONDITION_MSG
+            message = bot_configs.UNSUPPORTED_CONDITION_MSG + type
             logging.info(f"User update condition failed at chat id {chat_id} -- REASON -- Wrong condition rule: {type}")
         elif threshold < 0:
             message = bot_configs.NEGATIVE_THRESHOLD_MSG
@@ -105,11 +115,44 @@ class InteractiveBot():
                 self.cursor.execute(update_query, (threshold, chat_id, ticker))
                 self.connection.commit()
             message = "Alert added successfully! Use /list to see all your alert"
-            logging.info(f"User updated condition at chat id {chat_id}: {' '.join(args)}")
+            logging.info(f"User updated condition at chat id {chat_id}: {' '.join(args)} -- Success")
         await context.bot.send_message(chat_id=chat_id, text=message)
 
 
-    async def unknown(update: Update, context: CallbackContext.DEFAULT_TYPE):
+    async def remove_condition(self, update: Update, context: CallbackContext):
+        chat_id = update.effective_chat.id
+        args = context.args
+        if len(args) != 2:
+            message = "Invalid command arguments!\nThe syntax is: /remove \{ticker\} \{price_upper/price_lower\} "
+            await context.bot.send_message(chat_id=chat_id, text=message)
+            return
+
+        ticker = args[0].upper()
+        type = args[1].upper()
+
+        if ticker.upper() not in bot_configs.SYMBOL_LIST:
+            message = bot_configs.UNSUPPORTED_TICKER_MSG + ticker
+            logging.info(f"User remove condition failed at chat id {chat_id} -- REASON -- Ticker is not supported: {ticker}")
+        elif type not in bot_configs.TYPE_LIST:
+            message = bot_configs.UNSUPPORTED_CONDITION_MSG + type
+            logging.info(f"User remove condition failed at chat id {chat_id} -- REASON -- Wrong condition rule: {type}")
+        else:
+            select_query = "SELECT * FROM user_alert_condition WHERE chat_id = %s AND ticker = %s"
+            self.cursor.execute(select_query, (chat_id, ticker))
+            row = self.cursor.fetchone()
+            if row is None:
+                message = (bot_configs.NO_CONDITION_OM_TICKER_MESSAGE, (ticker,))
+                logging.info(f"User remove condition at chat id {chat_id} -- No condition on ticker")
+            else:
+                update_query = f"UPDATE user_alert_condition SET {type} = NULL WHERE chat_id = %s and ticker = %s"
+                self.cursor.execute(update_query, (chat_id, ticker))
+                self.connection.commit()
+                message = "Alert removed successfully! Use /list to see all your alert"
+                logging.info(f"User remove condition at chat id {chat_id}: {' '.join(args)} -- Success")
+        await context.bot.send_message(chat_id=chat_id, text=message)
+
+
+    async def unknown(self, update: Update, context: CallbackContext.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=update.effective_chat.id, text="Sorry, I didn't understand that command.")
 
 
