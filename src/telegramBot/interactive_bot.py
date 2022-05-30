@@ -38,6 +38,7 @@ class InteractiveBot():
         self.application.add_handler(CommandHandler('add', self.add_condition))
         self.application.add_handler(MessageHandler(filters.COMMAND, self.unknown))
 
+
     async def start(self, update: Update, context: CallbackContext.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
         logging.info(f"Start command at chat: {chat_id}")
@@ -51,6 +52,7 @@ class InteractiveBot():
             self.connection.commit()
             logging.info(f"New user added with chat id: {chat_id}")
         await context.bot.send_message(chat_id=chat_id, text=bot_configs.WELCOME_MESSAGE)
+
 
     async def list_condition(self, update: Update, context: CallbackContext.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
@@ -73,6 +75,7 @@ class InteractiveBot():
                 message = message + "\n - Lower threshhold: " + str(price_lower)
             logging.info(f"List condition at chat id {chat_id}: Success")
         await context.bot.send_message(chat_id=chat_id, text=message)
+
 
     async def add_condition(self, update: Update, context: CallbackContext):
         chat_id = update.effective_chat.id
@@ -104,6 +107,7 @@ class InteractiveBot():
             message = "Alert added successfully! Use /list to see all your alert"
             logging.info(f"User updated condition at chat id {chat_id}: {' '.join(args)}")
         await context.bot.send_message(chat_id=chat_id, text=message)
+
 
     async def unknown(update: Update, context: CallbackContext.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=update.effective_chat.id, text="Sorry, I didn't understand that command.")
