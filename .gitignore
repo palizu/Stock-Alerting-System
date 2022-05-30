@@ -2,3 +2,4 @@ env/*
 *.tar.gz
 kafka-logs/*
 zookeeper/*
+*.pyc
