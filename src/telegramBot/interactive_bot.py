@@ -1,9 +1,6 @@
-from ast import Call
 import logging
-from turtle import up
-from gevent import config
-from telegram import Update
 import bot_configs
+from telegram import Update
 from telegram.ext import *
 import mysql.connector
 from mysql.connector import Error
@@ -44,51 +41,54 @@ class InteractiveBot():
     async def start(self, update: Update, context: CallbackContext.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
         logging.info(f"Start command at chat: {chat_id}")
-        select_query = "SELECT * from USER where chat_id = %s"
+        select_query = "SELECT * FROM user WHERE chat_id = %s"
         self.cursor.execute(select_query, (chat_id,))
         rows = self.cursor.fetchone()
         if rows is None:    
-            insert_query = "INSERT into USER (chat_id) values (%s)"
+            insert_query = "INSERT INTO user (chat_id) VALUES (%s)"
             new_user_info = (chat_id,)
             self.cursor.execute(insert_query, new_user_info)
             self.connection.commit()
             logging.info(f"New user added with chat id: {chat_id}")
-        await context.bot.send_message(chat_id=chat_id, text=bot_configs.welcome_message)
+        await context.bot.send_message(chat_id=chat_id, text=bot_configs.WELCOME_MESSAGE)
 
     async def list_condition(self, update: Update, context: CallbackContext.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
         logging.info(f"List condition command at chat: {chat_id}")
         select_query = "SELECT * FROM user_alert_condition WHERE chat_id = %s"
         self.cursor.execute(select_query, (chat_id,))
-        rows = self.cursor.fetchone()
-        if rows is None: 
+        row = self.cursor.fetchone()
+        if row is None: 
             message = bot_configs.NO_CONDITION_MESSAGE
+            logging.info(f"List condition at chat id {chat_id}: Did not find any condition")
         else:
             message = "Your alert condition: \n"
-            for row in rows:
-                print(row)
-                symbol = row[1]
-                price_lower = row[2]
-                price_upper = row[3]
-                message = message + "\nsymbol: " + symbol
-                if price_upper is not None: 
-                    message = message + "\n - Upper threshhold: " + price_upper
-                if price_lower is not None: 
-                    message = message + "\n - Lower threshhold: " + price_lower
+            symbol = row[1]
+            price_lower = row[2]
+            price_upper = row[3]
+            message = message + "\nTicker " + symbol.upper() + ":"
+            if price_upper is not None: 
+                message = message + "\n - Upper threshhold: " + str(price_upper)
+            if price_lower is not None: 
+                message = message + "\n - Lower threshhold: " + str(price_lower)
+            logging.info(f"List condition at chat id {chat_id}: Success")
         await context.bot.send_message(chat_id=chat_id, text=message)
 
     async def add_condition(self, update: Update, context: CallbackContext):
         chat_id = update.effective_chat.id
         args = context.args
-        ticker = args[0]
-        type = args[1]
-        threshold = int(args[2])
+        ticker = args[0].upper()
+        type = args[1].upper()
+        threshold = float(args[2])
         if ticker.upper() not in bot_configs.SYMBOL_LIST:
-            message = f"{ticker.upper()} is not supported yet"
-        elif type.upper() not in bot_configs.TYPE_LIST:
-            message = bot_configs.ADD_CONDITION_WRONG_FORMAT_MSG
+            message = f"{ticker} is not supported yet"
+            logging.info(f"User update condition failed at chat id {chat_id} -- REASON -- Ticker is not supported: {ticker}")
+        elif type not in bot_configs.TYPE_LIST:
+            message = bot_configs.WRONG_RULE_CONDITION_MSG
+            logging.info(f"User update condition failed at chat id {chat_id} -- REASON -- Wrong condition rule: {type}")
         elif threshold < 0:
             message = bot_configs.NEGATIVE_THRESHOLD_MSG
+            logging.info(f"User update condition failed at chat id {chat_id} -- REASON -- Negative threshold")
         else:
             select_query = "SELECT * FROM user_alert_condition WHERE chat_id = %s and ticker = %s"
             self.cursor.execute(select_query, (chat_id, ticker))
@@ -98,10 +98,11 @@ class InteractiveBot():
                 self.cursor.execute(insert_query, (chat_id, ticker, threshold))
                 self.connection.commit()
             else:
-                update_query = f"UPDATE user_alert_condition set {type} = {threshold} where chat_id = {chat_id} and ticker = {ticker}"
-                self.cursor.execute(update_query)
+                update_query = f"UPDATE user_alert_condition set {type} = %s where chat_id = %s and ticker = %s"
+                self.cursor.execute(update_query, (threshold, chat_id, ticker))
                 self.connection.commit()
-            message = "Alert added successfully! User /list to see all your alert"
+            message = "Alert added successfully! Use /list to see all your alert"
+            logging.info(f"User updated condition at chat id {chat_id}: {' '.join(args)}")
         await context.bot.send_message(chat_id=chat_id, text=message)
 
     async def unknown(update: Update, context: CallbackContext.DEFAULT_TYPE):
