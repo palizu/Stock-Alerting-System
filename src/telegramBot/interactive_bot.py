@@ -14,7 +14,7 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-class InterationBot():
+class InteractiveBot():
     def __init__(self) -> None:
         try: 
             connection = mysql.connector.connect(
@@ -109,5 +109,5 @@ class InterationBot():
 
 
 if __name__ == '__main__':
-    interation_bot = InterationBot()
+    interation_bot = InteractiveBot()
     interation_bot.application.run_polling()
