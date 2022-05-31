@@ -3,3 +3,4 @@ env/*
 kafka-logs/*
 zookeeper/*
 *.pyc
+src/ingestion/stream_processor/checkpoint_dir
