@@ -7,13 +7,40 @@ from pyspark.sql.types import *
 from pyspark.sql.window import *
 from pyspark.sql.streaming import *
 from pyspark.sql import SparkSession
+import logging
+import mysql.connector
+from mysql.connector import Error
+from server_configs import config
 
 class StreamProcessor():
     def __init__(self) -> None:
         self.spark = (SparkSession
                     .builder
+                    .master('local')
                     .appName("StreamStockPriceProcessor")
                     .getOrCreate())
+            
+        self.past_data = self.spark.read.parquet('past_data')
+        print(self.past_data.schema)
+
+        try: 
+            connection = mysql.connector.connect(
+                host=config.host,
+                database=config.database,
+                port=config.port,
+                user=config.username,
+                password=config.password
+            )
+            if connection.is_connected():
+                self.connection = connection
+                logging.info(connection.get_server_info())
+                self.cursor = connection.cursor()
+                self.cursor.execute("select database();")
+                record = self.cursor.fetchone()
+                logging.info(f"You're connected to database: {record}")
+
+        except Error as e:
+            logging.error("Error while connecting to MySQL:\n" + e)
 
     def consume_from_file(self, file_path):
         file_schema = (StructType()
@@ -43,11 +70,12 @@ class StreamProcessor():
                     .groupBy("Symbol")
                     .agg(last("Close").alias("Last Close"), last("Volume").alias("Last Volume"), last("Time").alias("Time"))
                     )
+                    
 
         streaming_query = (price_table.writeStream
                     .format("console")
                     .outputMode("complete")
-                    .trigger(processingTime = "5 second")
+                    .trigger(processingTime = "10 second")
                     .option("checkpointLocation", "src/ingestion/stream_processor/checkpoint_dir")
                     .start())
 
