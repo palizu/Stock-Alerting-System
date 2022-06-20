@@ -1,3 +1,5 @@
+from bdb import effective
+from distutils.debug import DEBUG
 import logging
 import bot_configs
 from telegram import Update
@@ -151,6 +153,22 @@ class InteractiveBot():
                 logging.info(f"User remove condition at chat id {chat_id}: {' '.join(args)} -- Success")
         await context.bot.send_message(chat_id=chat_id, text=message)
 
+    async def stop(self, update: Update, context: CallbackContext):
+        chat_id = update.effective_chat.chat_id
+        logging.info(f"Stop receiving alert from chat: {chat_id}")
+        select_query = f"SELECT * FROM user WHERE chat_id = {chat_id}"
+        self.cursor.execute(select_query)
+        row = self.cursor.fetchone()
+        if row is not None:
+            delete_user_query = f"DELETE FROM user WHERE chat_id = {chat_id}"
+            self.cursor.execute(delete_user_query)
+            self.connection.commit()
+            delete_condition_query = f"DELETE FROM user_alert_condition WHERE chat_id = {chat_id}"
+            self.cursor.execute(delete_condition_query)
+            self.connection.commit()
+            logging.info("Remove user info from db successfully")
+        message = "Bye have a good time"
+        await context.bot.send_message(chat_id=chat_id, text=message)
 
     async def unknown(self, update: Update, context: CallbackContext.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=update.effective_chat.id, text="Sorry, I didn't understand that command.")

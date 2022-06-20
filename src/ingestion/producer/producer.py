@@ -1,6 +1,6 @@
 import ssi_fc_data
 import json
-import ssi_config
+from server_configs import config
 from kafka import KafkaProducer
 
 
@@ -33,11 +33,11 @@ def process_error(error):
     print(error)
 
 if __name__ == '__main__':
-    token = ssi_fc_data.access_token(config=ssi_config)
-    ssi_config.access_jwt = token['data']['accessToken']
+    token = ssi_fc_data.access_token(config=config)
+    config.access_jwt = token['data']['accessToken']
     channel = "X:ALL"
 
-    ssi_fc_data.Market_Data_Stream(ssi_config, process_message, process_error, channel)
+    ssi_fc_data.Market_Data_Stream(config, process_message, process_error, channel)
     producer.close()
 
 
