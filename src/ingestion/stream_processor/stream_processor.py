@@ -47,7 +47,7 @@ class StreamProcessor():
         streaming_query = (price_table.writeStream
                     .format("console")
                     .outputMode("complete")
-                    .trigger(processingTime = "5 second")
+                    .trigger(processingTime = "60 second")
                     .option("checkpointLocation", "src/ingestion/stream_processor/checkpoint_dir")
                     .start())
 
