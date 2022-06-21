@@ -5,6 +5,5 @@ kafka-logs/*
 zookeeper/*
 *.pyc
 src/ingestion/stream_processor/checkpoint_dir
-src/ingestion/stream_processor/past_data
 src/ingestion/stream_processor/test_data
 
