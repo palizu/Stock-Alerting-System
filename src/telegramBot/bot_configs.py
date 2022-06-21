@@ -1,6 +1,6 @@
 TOKEN = '5386965479:AAFjT0giz4iIoyRIylfAF4Qci9ijjkPCTw8'
 
-SYMBOL_LIST = ['AAA', 'AAM', 'AAT', 'ABR', 'ABS', 'ABT', 'ACB', 'ACC', 'ACL', 'ADG', 'ADS', 'AGG', 'AGM', 'AGR', 'AMD', 
+TICKERS = ['AAA', 'AAM', 'AAT', 'ABR', 'ABS', 'ABT', 'ACB', 'ACC', 'ACL', 'ADG', 'ADS', 'AGG', 'AGM', 'AGR', 'AMD', 
                 'ANV', 'APC', 'APG', 'APH', 'ASG', 'ASM', 'ASP', 'AST', 'BAF', 'BBC', 'BCE', 'BCG', 'BCM', 'BFC', 'BHN', 
                 'BIC', 'BID', 'BKG', 'BMC', 'BMI', 'BMP', 'BRC', 'BSI', 'BTP', 'BTT', 'BVH', 'BWE', 'C32', 'C47', 'CACB2102', 
                 'CACB2201', 'CACB2202', 'CACB2203', 'CAV', 'CCI', 'CCL', 'CDC', 'CEE', 'CFPT2108', 'CFPT2201', 'CFPT2202', 'CFPT2203', 
@@ -65,3 +65,12 @@ NEGATIVE_THRESHOLD_MSG = "Hmmm... kind of stupid if a threshold is negative righ
 WELCOME_MESSAGE = "Welcome message, to be edited"
 NO_CONDITION_MESSAGE = "You have no alert yet. Create one with /add \{ticker\} \{price_upper/price_lower\} \{threshold\}"
 NO_CONDITION_OM_TICKER_MESSAGE = "You have no alert on %s yet. Create one with /add \{ticker\} \{price_upper/price_lower\} \{threshold\}"
+
+
+#db config
+
+host = '127.0.0.1'
+database = 'StockAlertingSystem'
+username = 'root'
+password = 'manchester01'
+port = 3306

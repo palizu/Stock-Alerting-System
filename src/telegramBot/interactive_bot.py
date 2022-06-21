@@ -6,6 +6,7 @@ from telegram import Update
 from telegram.ext import *
 import mysql.connector
 from mysql.connector import Error
+import redis
 
 
 logging.basicConfig(
@@ -33,6 +34,8 @@ class InteractiveBot():
 
         except Error as e:
             logging.error("Error while connecting to MySQL:\n" + e)
+
+        self.r = redis.Redis()
 
         self.application = ApplicationBuilder().token(bot_configs.TOKEN).build()
         self.application.add_handler(CommandHandler('start', self.start))
@@ -71,13 +74,13 @@ class InteractiveBot():
         else:
             message = "Your alert condition: \n"
             symbol = row[1]
-            price_lower = row[2]
-            price_upper = row[3]
-            message = message + "\nTicker " + symbol.upper() + ":"
-            if price_upper is not None: 
-                message = message + "\n - Upper threshhold: " + str(price_upper)
-            if price_lower is not None: 
-                message = message + "\n - Lower threshhold: " + str(price_lower)
+            price = row[2]
+            direction = row[3]
+            message = message + "\nTicker " + symbol.upper()
+            if direction == 0: 
+                message = message + " has lower boundary: " + str(price)
+            if direction == 1: 
+                message = message +  "has upper boundary: " + str(price)
             logging.info(f"List condition at chat id {chat_id}: Success")
         await context.bot.send_message(chat_id=chat_id, text=message)
 
@@ -87,35 +90,46 @@ class InteractiveBot():
         args = context.args
 
         if len(args) != 3:
-            message = "Invalid command arguments!\nThe syntax is: /add \{ticker\} \{upper/lower\} \{threshold\}"
+            message = "Invalid command arguments!\nThe syntax is: /add \{ticker\} \{threshold\} \{direction (0 or 1)\}"
             await context.bot.send_message(chat_id=chat_id, text=message)
             return
 
         ticker = args[0].upper()
-        type = args[1].upper()
-        threshold = float(args[2])
+        direction = int(args[2])
+        threshold = float(args[1])
 
-        if ticker.upper() not in bot_configs.SYMBOL_LIST:
+        if ticker.upper() not in bot_configs.TICKERS:
             message = bot_configs.UNSUPPORTED_TICKER_MSG + ticker
             logging.info(f"User update condition failed at chat id {chat_id} -- REASON -- Ticker is not supported: {ticker}")
-        elif type not in bot_configs.TYPE_LIST:
-            message = bot_configs.UNSUPPORTED_CONDITION_MSG + type
-            logging.info(f"User update condition failed at chat id {chat_id} -- REASON -- Wrong condition rule: {type}")
+        elif direction not in (0, 1):
+            message = bot_configs.UNSUPPORTED_CONDITION_MSG + direction
+            logging.info(f"User update condition failed at chat id {chat_id} -- REASON -- Wrong direction: {direction}")
         elif threshold < 0:
             message = bot_configs.NEGATIVE_THRESHOLD_MSG
             logging.info(f"User update condition failed at chat id {chat_id} -- REASON -- Negative threshold")
         else:
-            select_query = "SELECT * FROM user_alert_condition WHERE chat_id = %s and ticker = %s"
-            self.cursor.execute(select_query, (chat_id, ticker))
+            select_query = "SELECT * FROM user_alert_condition WHERE chat_id = %s and ticker = %s and direction = %s"
+            self.cursor.execute(select_query, (chat_id, ticker, direction))
             row = self.cursor.fetchone()
             if row is None:
-                insert_query = f"INSERT INTO user_alert_condition (chat_id, ticker, {type}) values (%s, %s, %s)"
-                self.cursor.execute(insert_query, (chat_id, ticker, threshold))
+                insert_query = f"INSERT INTO user_alert_condition (chat_id, ticker, price, direction) values (%s, %s, %s, %s)"
+                self.cursor.execute(insert_query, (chat_id, ticker, threshold, direction))
                 self.connection.commit()
             else:
-                update_query = f"UPDATE user_alert_condition set {type} = %s where chat_id = %s and ticker = %s"
-                self.cursor.execute(update_query, (threshold, chat_id, ticker))
+                update_query = f"UPDATE user_alert_condition set price = %s where chat_id = %s and ticker = %s and direction = %s"
+                self.cursor.execute(update_query, (threshold, chat_id, ticker, direction))
                 self.connection.commit()
+            if row is not None:
+                if direction == 1:
+                    self.r.zrem(f"alert:{ticker}:gt", chat_id)
+                else:
+                    self.r.zrem(f"alert:{ticker}:lt", chat_id)
+            if direction == 1:
+                self.r.zadd(f"alert:{ticker}:gt", {str(chat_id): threshold})
+                # self.r.zadd(f"alert:{ticker}:gt", threshold, chat_id)
+            else:
+                self.r.zadd(f"alert:{ticker}:lt", {str(chat_id): threshold})
+                #  self.r.zadd(f"alert:{ticker}:lt", threshold, chat_id)
             message = "Alert added successfully! Use /list to see all your alert"
             logging.info(f"User updated condition at chat id {chat_id}: {' '.join(args)} -- Success")
         await context.bot.send_message(chat_id=chat_id, text=message)
@@ -125,32 +139,36 @@ class InteractiveBot():
         chat_id = update.effective_chat.id
         args = context.args
         if len(args) != 2:
-            message = "Invalid command arguments!\nThe syntax is: /remove \{ticker\} \{price_upper/price_lower\} "
+            message = "Invalid command arguments!\nThe syntax is: /remove \{ticker\} \{direction (0 or 1)\} "
             await context.bot.send_message(chat_id=chat_id, text=message)
             return
 
         ticker = args[0].upper()
-        type = args[1].upper()
+        direction = int(args[2])
 
-        if ticker.upper() not in bot_configs.SYMBOL_LIST:
+        if ticker.upper() not in bot_configs.TICKERS:
             message = bot_configs.UNSUPPORTED_TICKER_MSG + ticker
             logging.info(f"User remove condition failed at chat id {chat_id} -- REASON -- Ticker is not supported: {ticker}")
         elif type not in bot_configs.TYPE_LIST:
             message = bot_configs.UNSUPPORTED_CONDITION_MSG + type
-            logging.info(f"User remove condition failed at chat id {chat_id} -- REASON -- Wrong condition rule: {type}")
+            logging.info(f"User remove condition failed at chat id {chat_id} -- REASON -- Wrong direction: {direction}")
         else:
-            select_query = "SELECT * FROM user_alert_condition WHERE chat_id = %s AND ticker = %s"
-            self.cursor.execute(select_query, (chat_id, ticker))
+            select_query = "SELECT * FROM user_alert_condition WHERE chat_id = %s AND ticker = %s and direction = %s"
+            self.cursor.execute(select_query, (chat_id, ticker, direction))
             row = self.cursor.fetchone()
             if row is None:
                 message = (bot_configs.NO_CONDITION_OM_TICKER_MESSAGE, (ticker,))
                 logging.info(f"User remove condition at chat id {chat_id} -- No condition on ticker")
             else:
-                update_query = f"UPDATE user_alert_condition SET {type} = NULL WHERE chat_id = %s and ticker = %s"
-                self.cursor.execute(update_query, (chat_id, ticker))
+                delete_query = "DELETE FROM user_alert_condition WHERE WHERE chat_id = %s AND ticker = %s and direction = %s"
+                self.cursor.execute(delete_query, (chat_id, ticker, direction))
                 self.connection.commit()
                 message = "Alert removed successfully! Use /list to see all your alert"
                 logging.info(f"User remove condition at chat id {chat_id}: {' '.join(args)} -- Success")
+            if direction == 1:
+                self.r.zrem(f"alert:{ticker}:gt", chat_id)
+            else:
+                self.r.zrem(f"alert:{ticker}:lt", chat_id)
         await context.bot.send_message(chat_id=chat_id, text=message)
 
     async def stop(self, update: Update, context: CallbackContext):

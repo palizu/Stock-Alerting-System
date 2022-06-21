@@ -1,6 +1,7 @@
 # import imp
 from ast import Str
 import json
+from os import truncate
 from kafka import KafkaConsumer
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
@@ -11,8 +12,8 @@ from pyspark.sql.functions import first, last
 import logging
 import mysql.connector
 from mysql.connector import Error
-import configs
-
+import config
+import redis
 
 class StreamProcessor():
     def __init__(self) -> None:
@@ -22,8 +23,13 @@ class StreamProcessor():
                     .appName("StreamStockPriceProcessor")
                     .getOrCreate())
             
-        # self.past_data = self.spark.read.parquet('past_data')
+        # self.past_data = self.spark.read.parquet('src/ingestion/stream_processor/past_data')
+        # window_spec = Window.partitionBy('Symbol').orderBy(col('PARTITION_DATE').desc())
+        # self.past_data = self.past_data.withColumn("rn", row_number().over(window_spec))
+        # self.past_data = self.past_data.select(self.past_data.columns[:-1]).where("rn <= 20").orderBy("PARTITION_DATE", "Symbol")
         # print(self.past_data.schema)
+        # self.past_data.show(truncate=False)
+        # self.past_data.createOrReplaceTempView("past_data")
 
         try: 
             connection = mysql.connector.connect(
@@ -44,42 +50,52 @@ class StreamProcessor():
         except Error as e:
             logging.error("Error while connecting to MySQL:\n" + e)
 
+        self.r = redis.Redis()
+        self.loadMySQLTableToRedis
+
+    def loadMySQLTableToRedis(self):
+        pass
+
+    # def getAlert(self, df, epoch_id):
+    #     for ticker in config.TICKERS:
+    #         price = df.filter(col("Symbol") == ticker).select("Last Close")
+    #         print(price)
+  
+
     def consume_from_file(self, file_path):
         file_schema = (StructType()
-                    .add(StructField("RType", StringType()))
-                    .add(StructField("TradingDate", StringType()))
-                    .add(StructField("Time", StringType()))
-                    .add(StructField("Symbol", StringType()))
-                    .add(StructField("Open", DoubleType()))
-                    .add(StructField("High", DoubleType()))
-                    .add(StructField("Low", DoubleType()))
-                    .add(StructField("Close", DoubleType()))
-                    .add(StructField("Volume", DoubleType()))
-                    .add(StructField("Value", DoubleType()))
-                    )
-
+                .add(StructField("Symbol", StringType()))
+                .add(StructField("Open", DoubleType()))
+                .add(StructField("High", DoubleType()))
+                .add(StructField("Low", DoubleType()))
+                .add(StructField("Close", DoubleType()))
+                .add(StructField("Volume", DoubleType()))
+                .add(StructField("Value", DoubleType()))
+                .add(StructField("Time", StringType()))
+                .add(StructField("PARTITION_M", StringType()))
+                .add(StructField("PARTITION_DATE", StringType()))
+            )
         self.df = (self.spark
             .readStream
-            .format('json')
+            .format('parquet')
             .schema(file_schema)
             .option('maxFilesPerTrigger', 1)
             .load(file_path))
         
+        # price_table = (self.df
+        #             .withColumn("timestamp", to_timestamp(to_date(concat_ws(" ", "TradingDate", "Time"), 'dd/MM/yyyy HH:mm:ss'))))
+        self.df = self.df.filter(col("Symbol") == "AAA")
+        
         price_table = (self.df
-                    .withColumn("timestamp", to_timestamp(concat_ws(" ", "TradingDate", "Time"), 'dd/MM/yyyy HH:mm:ss'))
-                    )
-        price_table = (price_table
-        #             .withWatermark("timestamp", "10 minutes") 
-        #             .groupBy("Symbol")
-        #             .agg(last("Close").alias("Last Close"), last("Volume").alias("Last Volume"), last("Time").alias("Time"))
-                    .filter(col("Symbol") == 'FPT')
+                    .groupBy("Symbol")
+                    .agg(last("Close").alias("Last Close"), last("Volume").alias("Last Volume"), last("Time").alias("Time"))
                     )
                     
-
         streaming_query = (price_table.writeStream
+                    .foreachBatch(self.getAlert)
                     .format("console")
-                    .outputMode("append")
-                    # .trigger(processingTime = "60 second")
+                    .outputMode("complete")
+                    .trigger(processingTime = "30 second")
                     .option("checkpointLocation", "src/ingestion/stream_processor/checkpoint_dir")
                     .start())
 
@@ -89,4 +105,4 @@ class StreamProcessor():
 
 if __name__ == '__main__':
     processor = StreamProcessor()
-    processor.consume_from_file("src/ingestion/stream_processor/test_data/")
+    processor.consume_from_file("src/ingestion/stream_processor/intra_day/PARTITION_DATE=04042022")

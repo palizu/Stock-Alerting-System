@@ -1,6 +1,6 @@
 import ssi_fc_data
 import json
-from server_configs import config
+import ssi_config as config
 from kafka import KafkaProducer
 
 
