@@ -1,6 +1,7 @@
 import logging
+from this import d
 import bot_configs
-from telegram import Update
+from telegram import Update, Bot
 from telegram.ext import *
 import mysql.connector
 from mysql.connector import Error
@@ -27,5 +28,10 @@ class PushNotificationBot():
         except Error as e:
             logging.error("Error while connecting to MySQL:\n" + e)
 
-        self.application = ApplicationBuilder().token(bot_configs.TOKEN).build()
+        self.bot = Bot(bot_configs.TOKEN)
 
+    def consume(self):
+        pass
+
+    def send_alert(self):
+        pass

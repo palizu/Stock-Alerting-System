@@ -1,3 +1,4 @@
+from asyncio import selector_events
 from bdb import effective
 from distutils.debug import DEBUG
 import logging
@@ -36,6 +37,8 @@ class InteractiveBot():
             logging.error("Error while connecting to MySQL:\n" + e)
 
         self.r = redis.Redis()
+        logging.info("Connected to Redis")
+        self.load_mysql_to_redis()
 
         self.application = ApplicationBuilder().token(bot_configs.TOKEN).build()
         self.application.add_handler(CommandHandler('start', self.start))
@@ -44,7 +47,21 @@ class InteractiveBot():
         self.application.add_handler(CommandHandler('remove', self.remove_condition))
         self.application.add_handler(MessageHandler(filters.COMMAND, self.unknown))
 
+    def load_mysql_to_redis(self):
+        self.r.delete("all_records")
+        select_query = "SELECT * FROM user_alert_condition"
+        self.cursor.execute(select_query)
+        conditions = self.cursor.fetchall()
+        if conditions is None:
+            return
+        for condition in conditions:
+            (chat_id, ticker, price, direction) = condition
+            if direction == '0':
+                self.r.zadd(f'alert:{ticker}:lt', {chat_id : price})
+            else:
+                self.r.zadd(f'alert:{ticker}:gt', {chat_id : price})
 
+        
     async def start(self, update: Update, context: CallbackContext.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
         logging.info(f"Start command at chat: {chat_id}")

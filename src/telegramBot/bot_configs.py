@@ -72,5 +72,5 @@ NO_CONDITION_OM_TICKER_MESSAGE = "You have no alert on %s yet. Create one with /
 host = '127.0.0.1'
 database = 'StockAlertingSystem'
 username = 'root'
-password = 'manchester01'
+password = 'FbpD@2926[]'
 port = 3306

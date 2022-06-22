@@ -13,7 +13,6 @@ import logging
 import mysql.connector
 from mysql.connector import Error
 import config
-import redis
 
 class StreamProcessor():
     def __init__(self) -> None:
@@ -33,11 +32,11 @@ class StreamProcessor():
 
         try: 
             connection = mysql.connector.connect(
-                host=configs.host,
-                database=configs.database,
-                port=configs.port,
-                user=configs.username,
-                password=configs.password
+                host=config.host,
+                database=config.database,
+                port=config.port,
+                user=config.username,
+                password=config.password
             )
             if connection.is_connected():
                 self.connection = connection
@@ -49,18 +48,6 @@ class StreamProcessor():
 
         except Error as e:
             logging.error("Error while connecting to MySQL:\n" + e)
-
-        self.r = redis.Redis()
-        self.loadMySQLTableToRedis
-
-    def loadMySQLTableToRedis(self):
-        pass
-
-    # def getAlert(self, df, epoch_id):
-    #     for ticker in config.TICKERS:
-    #         price = df.filter(col("Symbol") == ticker).select("Last Close")
-    #         print(price)
-  
 
     def consume_from_file(self, file_path):
         file_schema = (StructType()
@@ -79,23 +66,22 @@ class StreamProcessor():
             .readStream
             .format('parquet')
             .schema(file_schema)
-            .option('maxFilesPerTrigger', 1)
+            .option('maxFilesPerTrigger', 2)
             .load(file_path))
         
         # price_table = (self.df
         #             .withColumn("timestamp", to_timestamp(to_date(concat_ws(" ", "TradingDate", "Time"), 'dd/MM/yyyy HH:mm:ss'))))
         self.df = self.df.filter(col("Symbol") == "AAA")
         
-        price_table = (self.df
+        price_table = (self.df 
                     .groupBy("Symbol")
                     .agg(last("Close").alias("Last Close"), last("Volume").alias("Last Volume"), last("Time").alias("Time"))
                     )
                     
         streaming_query = (price_table.writeStream
-                    .foreachBatch(self.getAlert)
                     .format("console")
                     .outputMode("complete")
-                    .trigger(processingTime = "30 second")
+                    .trigger(processingTime = "10 second")
                     .option("checkpointLocation", "src/ingestion/stream_processor/checkpoint_dir")
                     .start())
 

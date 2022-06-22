@@ -63,3 +63,21 @@ TICKERS = ['AAA', 'AAM', 'AAT', 'ABR', 'ABS', 'ABT', 'ACB', 'ACC', 'ACL', 'ADG',
                 'VC3', 'VC6', 'VC7', 'VC9', 'VCC', 'VCM', 'VCS', 'VDL', 'VE1', 'VE2', 'VE3', 'VE4', 'VE8', 'VGP', 'VGS', 'VHE', 'VHL', 'VIE', 
                 'VIF', 'VIG', 'VIT', 'VKC', 'VLA', 'VMC', 'VMS', 'VNC', 'VNF', 'VNR', 'VNT', 'VSA', 'VSM', 'VTC', 'VTH', 'VTJ', 'VTL', 'VTV', 
                 'VTZ', 'VXB', 'WCS', 'WSS', 'X20']  
+
+
+
+#db config
+
+host = '127.0.0.1'
+database = 'StockAlertingSystem'
+username = 'root'
+password = 'FbpD@2926[]'
+port = 3306
+
+# ssi config
+auth_type = 'Bearer'
+consumerID = 'cb751a5fff2345488f3a20b8137f048f'
+consumerSecret = '71532e139f5947909f5d5e15893a49d7'
+access_jwt = ''
+url = 'https://fc-data.ssi.com.vn/'
+stream_url = 'https://fc-data.ssi.com.vn/'
