@@ -14,6 +14,8 @@ import mysql.connector
 from mysql.connector import Error
 import config
 
+import os
+
 class StreamProcessor():
     def __init__(self) -> None:
         self.spark = (SparkSession
@@ -49,38 +51,43 @@ class StreamProcessor():
         except Error as e:
             logging.error("Error while connecting to MySQL:\n" + e)
 
-    def consume_from_file(self, file_path):
-        file_schema = (StructType()
+    def process(self):
+        schema = (StructType()
                 .add(StructField("Symbol", StringType()))
+                .add(StructField("TradingDate", StringType()))
+                .add(StructField("Time", StringType()))
                 .add(StructField("Open", DoubleType()))
                 .add(StructField("High", DoubleType()))
                 .add(StructField("Low", DoubleType()))
                 .add(StructField("Close", DoubleType()))
                 .add(StructField("Volume", DoubleType()))
-                .add(StructField("Value", DoubleType()))
-                .add(StructField("Time", StringType()))
-                .add(StructField("PARTITION_M", StringType()))
-                .add(StructField("PARTITION_DATE", StringType()))
             )
+
         self.df = (self.spark
             .readStream
-            .format('parquet')
-            .schema(file_schema)
-            .option('maxFilesPerTrigger', 2)
-            .load(file_path))
-        
+            .format('kafka')
+            .option("kafka.bootstrap.servers", "127.0.0.1:9092")
+            .option("subscribe", "market_data")
+            .option("startingOffsets", "latest")
+            .load()
+        )
+       
+        tbl = self.df.select(
+            from_json(col("value").cast("string"), schema)
+        )
+
         # price_table = (self.df
         #             .withColumn("timestamp", to_timestamp(to_date(concat_ws(" ", "TradingDate", "Time"), 'dd/MM/yyyy HH:mm:ss'))))
-        self.df = self.df.filter(col("Symbol") == "AAA")
+        # self.df = self.df.filter(col("Symbol") == "AAA")
         
-        price_table = (self.df 
-                    .groupBy("Symbol")
-                    .agg(last("Close").alias("Last Close"), last("Volume").alias("Last Volume"), last("Time").alias("Time"))
-                    )
+        # tbl = (tbl
+        #     .groupBy("Symbol")
+        #     .agg(last("Close").alias("Last Close"), last("Volume").alias("Last Volume"), last("Time").alias("Time"))
+        # )
                     
-        streaming_query = (price_table.writeStream
+        streaming_query = (tbl.writeStream
                     .format("console")
-                    .outputMode("complete")
+                    .outputMode("append")
                     .trigger(processingTime = "10 second")
                     .option("checkpointLocation", "src/ingestion/stream_processor/checkpoint_dir")
                     .start())
@@ -91,4 +98,4 @@ class StreamProcessor():
 
 if __name__ == '__main__':
     processor = StreamProcessor()
-    processor.consume_from_file("src/ingestion/stream_processor/intra_day/PARTITION_DATE=04042022")
+    processor.process()
