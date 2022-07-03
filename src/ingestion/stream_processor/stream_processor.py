@@ -2,6 +2,8 @@
 from ast import Str
 import json
 from os import truncate
+from tokenize import Double
+from xml.dom.minicompat import StringTypes
 from kafka import KafkaConsumer
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
@@ -56,11 +58,11 @@ class StreamProcessor():
                 .add(StructField("Symbol", StringType()))
                 .add(StructField("TradingDate", StringType()))
                 .add(StructField("Time", StringType()))
-                .add(StructField("Open", DoubleType()))
-                .add(StructField("High", DoubleType()))
-                .add(StructField("Low", DoubleType()))
-                .add(StructField("Close", DoubleType()))
-                .add(StructField("Volume", DoubleType()))
+                .add(StructField("Open", StringType()))
+                .add(StructField("High", StringType()))
+                .add(StructField("Low", StringType()))
+                .add(StructField("Close", StringType()))
+                .add(StructField("Volume", StringType()))
             )
 
         self.df = (self.spark
@@ -71,23 +73,36 @@ class StreamProcessor():
             .option("startingOffsets", "latest")
             .load()
         )
-       
+
         tbl = self.df.select(
-            from_json(col("value").cast("string"), schema)
+            from_json(col("value") 
+            .cast("string"), schema) 
+            .alias("data")
+        ).select("data.*")
+
+        tbl = (tbl
+            .withColumn("timestamp", to_timestamp(to_date(concat_ws(" ", "TradingDate", "Time"), 'dd/MM/yyyy HH:mm:ss')))
+            .withWatermark("timestamp", "5 minutes")
+            .groupBy("Symbol")
+            .agg(last("Close").alias("last_close"), last("Volume").alias("last_volume"), last("Time").alias("last_time"))
         )
 
-        # price_table = (self.df
-        #             .withColumn("timestamp", to_timestamp(to_date(concat_ws(" ", "TradingDate", "Time"), 'dd/MM/yyyy HH:mm:ss'))))
-        # self.df = self.df.filter(col("Symbol") == "AAA")
-        
-        # tbl = (tbl
-        #     .groupBy("Symbol")
-        #     .agg(last("Close").alias("Last Close"), last("Volume").alias("Last Volume"), last("Time").alias("Time"))
-        # )
+        tbl = tbl.withColumn("topic", lit("price"))
+
+        # streaming_query = (tbl.selectExpr("CAST(Symbol as STRING) AS key", "CAST((last_close || ':' || Symbol || ':' || timestamp) as STRING) as value")
+        #             .writeStream
+        #             .format("console")
+        #             .outputMode("complete")
+        #             # .option("kafka.bootstrap.servers", "127.0.0.1:9092")
+        #             .trigger(processingTime = "10 second")
+        #             .option("checkpointLocation", "src/ingestion/stream_processor/checkpoint_dir")
+        #             .start())
                     
-        streaming_query = (tbl.writeStream
-                    .format("console")
-                    .outputMode("append")
+        streaming_query = (tbl.selectExpr("topic", "CAST(Symbol as STRING) AS key", "CAST(last_close as STRING) as value")
+                    .writeStream
+                    .format("kafka")
+                    .outputMode("Complete")
+                    .option("kafka.bootstrap.servers", "127.0.0.1:9092")
                     .trigger(processingTime = "10 second")
                     .option("checkpointLocation", "src/ingestion/stream_processor/checkpoint_dir")
                     .start())

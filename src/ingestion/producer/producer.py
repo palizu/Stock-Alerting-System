@@ -27,19 +27,21 @@ class MarketDataProducer():
         self.producer = KafkaProducer(**producer_configs)
 
     def process_message(self, message):
+        print(message)
         data = json.loads(message['Content'])
-        row = {
-            'Symbol':data['Symbol'],
-            'TradingDate':data['TradingDate'],
-            'Time':data['Time'],
-            'Open':data['Open'],
-            'High':data['High'],
-            'Low':data['Low'],
-            'Close':data['Close'],
-            'Volume':data['Volume'],
-        }
-        logging.info("Sending: " + str(row))
-        self.producer.send('market_data', value=row, key=row['Symbol'])
+        if data['Close'] != 0:
+            row = {
+                'Symbol':data['Symbol'],
+                'TradingDate':data['TradingDate'],
+                'Time':data['Time'],
+                'Open':data['Open'],
+                'High':data['High'],
+                'Low':data['Low'],
+                'Close':data['Close'],
+                'Volume':data['Volume'],
+            }
+            logging.info("Sending: " + str(row))
+            self.producer.send('market_data', value=row, key=row['Symbol'])
 
     def process_error(self, error):
         print(error)
@@ -47,7 +49,7 @@ class MarketDataProducer():
     def produce_from_api(self):
         token = ssi_fc_data.access_token(config=config)
         config.access_jwt = token['data']['accessToken']
-        channel = "X:ALL"
+        channel = "B:ALL"
         ssi_fc_data.Market_Data_Stream(config, self.process_message, self.process_error, channel)
 
     # testing
@@ -82,7 +84,7 @@ class MarketDataProducer():
 
 if __name__ == '__main__':
     producer = MarketDataProducer()
-    # producer.produce_from_api()
-    producer.produce_from_file('src/ingestion/producer/test_data.json')
+    producer.produce_from_api()
+    # producer.produce_from_file('src/ingestion/producer/test_data.json')
 
 

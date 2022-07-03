@@ -74,3 +74,8 @@ database = 'StockAlertingSystem'
 username = 'root'
 password = 'FbpD@2926[]'
 port = 3306
+
+
+# alert message
+GT_MESSAGE = "Alert on %s: Price went above your theshold!!\nCurrent price: %f"
+LT_MESSAGE = "Alert on %s: Price went under your theshold!!\nCurrent price: %f"
