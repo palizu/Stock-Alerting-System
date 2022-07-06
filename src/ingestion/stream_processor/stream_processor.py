@@ -22,7 +22,7 @@ class StreamProcessor():
     def __init__(self) -> None:
         self.spark = (SparkSession
                     .builder
-                    .master('local')
+                    .master('spark://vds-vanhta2:7077')
                     .appName("StreamStockPriceProcessor")
                     .getOrCreate())
             

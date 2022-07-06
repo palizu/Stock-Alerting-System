@@ -77,5 +77,5 @@ port = 3306
 
 
 # alert message
-GT_MESSAGE = "Alert on %s: Price went above your theshold!!\nCurrent price: %f"
-LT_MESSAGE = "Alert on %s: Price went under your theshold!!\nCurrent price: %f"
+GT_MESSAGE = "Alert on {}: Price went above your theshold!!\nCurrent price: {}"
+LT_MESSAGE = "Alert on {}: Price went under your theshold!!\nCurrent price: {}"

@@ -28,7 +28,7 @@ class InteractiveBot():
             if connection.is_connected():
                 self.connection = connection
                 logging.info(connection.get_server_info())
-                self.cursor = connection.cursor()
+                self.cursor = connection.cursor(buffered=True)
                 self.cursor.execute("select database();")
                 record = self.cursor.fetchone()
                 logging.info(f"You're connected to database: {record}")
@@ -48,7 +48,7 @@ class InteractiveBot():
         self.application.add_handler(MessageHandler(filters.COMMAND, self.unknown))
 
     def load_mysql_to_redis(self):
-        self.r.delete("all_records")
+        self.r.flushall()
         select_query = "SELECT * FROM user_alert_condition"
         self.cursor.execute(select_query)
         conditions = self.cursor.fetchall()
@@ -56,7 +56,7 @@ class InteractiveBot():
             return
         for condition in conditions:
             (chat_id, ticker, price, direction) = condition
-            if direction == '0':
+            if direction == 0:
                 self.r.zadd(f'alert:{ticker}:lt', {chat_id : price})
             else:
                 self.r.zadd(f'alert:{ticker}:gt', {chat_id : price})
@@ -83,23 +83,24 @@ class InteractiveBot():
         logging.info(f"List condition command at chat: {chat_id}")
         select_query = "SELECT * FROM user_alert_condition WHERE chat_id = %s"
         self.cursor.execute(select_query, (chat_id,))
-        row = self.cursor.fetchone()
+        rows = self.cursor.fetchall()
         
-        if row is None: 
+        if rows is None: 
             message = bot_configs.NO_CONDITION_MESSAGE
             logging.info(f"List condition at chat id {chat_id}: Did not find any condition")
         else:
             message = "Your alert condition: \n"
-            symbol = row[1]
-            price = row[2]
-            direction = row[3]
-            message = message + "\nTicker " + symbol.upper()
-            if direction == 0: 
-                message = message + " has lower boundary: " + str(price)
-            if direction == 1: 
-                message = message +  "has upper boundary: " + str(price)
+            for row in rows:
+                symbol = row[1]
+                price = row[2]
+                direction = row[3]
+                message = message + "\nTicker " + symbol.upper()
+                if direction == 0: 
+                    message = message + " has lower boundary: " + str(price)
+                if direction == 1: 
+                    message = message +  "has upper boundary: " + str(price)
+            await context.bot.send_message(chat_id=chat_id, text=message)
             logging.info(f"List condition at chat id {chat_id}: Success")
-        await context.bot.send_message(chat_id=chat_id, text=message)
 
 
     async def add_condition(self, update: Update, context: CallbackContext):
@@ -143,10 +144,8 @@ class InteractiveBot():
                     self.r.zrem(f"alert:{ticker}:lt", chat_id)
             if direction == 1:
                 self.r.zadd(f"alert:{ticker}:gt", {str(chat_id): threshold})
-                # self.r.zadd(f"alert:{ticker}:gt", threshold, chat_id)
             else:
                 self.r.zadd(f"alert:{ticker}:lt", {str(chat_id): threshold})
-                #  self.r.zadd(f"alert:{ticker}:lt", threshold, chat_id)
             message = "Alert added successfully! Use /list to see all your alert"
             logging.info(f"User updated condition at chat id {chat_id}: {' '.join(args)} -- Success")
         await context.bot.send_message(chat_id=chat_id, text=message)
