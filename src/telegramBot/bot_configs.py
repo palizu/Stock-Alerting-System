@@ -69,12 +69,16 @@ NO_CONDITION_OM_TICKER_MESSAGE = "You have no alert on %s yet. Create one with /
 
 #db config
 
-host = '127.0.0.1'
-database = 'StockAlertingSystem'
-username = 'root'
-password = 'FbpD@2926[]'
-port = 3306
+mysql_host = '127.0.0.1'
+mysql_database = 'StockAlertingSystem'
+mysql_username = 'root'
+mysql_password = 'FbpD@2926[]'
+mysql_port = 3306
 
+influx_host = '127.0.0.1'
+influx_port = 8086
+influx_username = 'admin'
+influx_password = 'FbpD@2926[]'
 
 # alert message
 GT_MESSAGE = "Alert on {}: Price went above your theshold!!\nCurrent price: {}"

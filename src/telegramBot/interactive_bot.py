@@ -19,11 +19,11 @@ class InteractiveBot():
     def __init__(self) -> None:
         try: 
             connection = mysql.connector.connect(
-                host=bot_configs.host,
-                database=bot_configs.database,
-                port=bot_configs.port,
-                user=bot_configs.username,
-                password=bot_configs.password
+                host=bot_configs.mysql_host,
+                database=bot_configs.mysql_database,
+                port=bot_configs.mysql_port,
+                user=bot_configs.mysql_username,
+                password=bot_configs.mysql_password
             )
             if connection.is_connected():
                 self.connection = connection
@@ -206,6 +206,7 @@ class InteractiveBot():
 
     async def unknown(self, update: Update, context: CallbackContext.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=update.effective_chat.id, text="Sorry, I didn't understand that command.")
+
 
 if __name__ == '__main__':
     interation_bot = InteractiveBot()

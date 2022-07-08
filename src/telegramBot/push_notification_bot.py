@@ -10,17 +10,19 @@ import redis
 import threading
 import json
 import asyncio
+from influxdb import InfluxDBClient
+from datetime import datetime, time
 
 
 class PushNotificationBot():
     def __init__(self, consumer_configs=None) -> None:
         try: 
             connection = mysql.connector.connect(
-                host=bot_configs.host,
-                database=bot_configs.database,
-                port=bot_configs.port,
-                user=bot_configs.username,
-                password=bot_configs.password
+                host=bot_configs.mysql_host,
+                database=bot_configs.mysql_database,
+                port=bot_configs.mysql_port,
+                user=bot_configs.mysql_username,
+                password=bot_configs.mysql_password
             )
             if connection.is_connected():
                 self.connection = connection
@@ -34,12 +36,20 @@ class PushNotificationBot():
             logging.error("Error while connecting to MySQL:\n" + e)
 
         self.r = redis.Redis()
+        self.influx_client = InfluxDBClient(
+            host=bot_configs.influx_host, 
+            port=bot_configs.influx_port,
+            username=bot_configs.influx_username,
+            password=bot_configs.influx_password
+        )
+        self.influx_client.switch_database('stock_info')
         self.bot = telegram.Bot(token=bot_configs.TOKEN)
         if consumer_configs is None:
             consumer_configs = {
                 "bootstrap_servers" : ["127.0.0.1:9092"],
                 "key_deserializer" : lambda x: x.decode("utf-8"),
-                "value_deserializer" : lambda x: float(x)
+                "value_deserializer" : lambda x: float(x),
+                "group_id" : "group-1"
             }
         self.consumer = KafkaConsumer(**consumer_configs)
         self.consumer.subscribe(['price', 'ma20', 'macd'])
@@ -53,20 +63,41 @@ class PushNotificationBot():
                     await self.process_price_info(messages)
 
     async def process_price_info(self, messages):
+        data_points = []
         for message in messages:
             ticker = message.key
             cur_price = message.value / 1000
-            prev_price = 1200 
-            # print(f"ticker: {ticker} ---- price: {cur_price} ---- previous_price: {prev_price}")
+            prev_price = self.r.get(f"price:{ticker}")
 
-            alert_chat_ids_lt = set(self.r.zrangebyscore(f"alert:{ticker}:lt", cur_price, '+inf')).difference(set(self.r.zrangebyscore(f"alert:{ticker}:lt", prev_price, '+inf')))
-            if len(alert_chat_ids_lt) > 0:
+            point = {
+                "measurement" : "price",
+                "tags" : {
+                    "ticker" : ticker
+                    },
+                "fields" : {
+                    "ticker" : ticker,
+                    "price" : cur_price
+                },
+                "time" : int(datetime.combine(datetime.now(), time.min).timestamp())
+            }
+            data_points.append(point)
+
+            if prev_price is None:
+                self.r.set(f"price:{ticker}", cur_price)
+                return
+
+            prev_price = float(prev_price)
+            alert_chat_ids_lt = self.r.zrangebyscore(f"alert:{ticker}:lt", cur_price, '+inf')
+            if len(alert_chat_ids_lt) > 0 and cur_price < prev_price:
                 await self.send_alerts(alert_chat_ids_lt, ticker, cur_price, 0)
-            alert_chat_ids_gt = set(self.r.zrangebyscore(f"alert:{ticker}:gt", cur_price, '+inf')).difference(set(self.r.zrangebyscore(f"alert:{ticker}:gt", prev_price, '+inf')))
-            if len(alert_chat_ids_gt) > 0:
+            alert_chat_ids_gt = self.r.zrangebyscore(f"alert:{ticker}:gt", cur_price, '+inf')
+            if len(alert_chat_ids_gt) > 0 and cur_price > prev_price:
                 await self.send_alerts(alert_chat_ids_gt, ticker, cur_price, 1)
             
             self.r.set(f"price:{ticker}", cur_price)
+
+        self.influx_client.write_points(data_points)
+
 
     async def send_alerts(self, chat_ids, ticker, cur_price, direction):
         if direction == 0:
@@ -77,6 +108,9 @@ class PushNotificationBot():
         for chat_id in chat_ids:
             text_msg = msg.format(ticker, cur_price)
             await self.bot.send_message(chat_id=chat_id.decode('utf-8'), text=text_msg)
+
+    def __del__(self):
+        self.r.quit()
 
 if __name__ == "__main__":
     bot = PushNotificationBot()

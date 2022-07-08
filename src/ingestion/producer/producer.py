@@ -84,7 +84,7 @@ class MarketDataProducer():
 
 if __name__ == '__main__':
     producer = MarketDataProducer()
-    producer.produce_from_api()
-    # producer.produce_from_file('src/ingestion/producer/test_data.json')
+    # producer.produce_from_api()
+    producer.produce_from_file('src/ingestion/producer/test_data.json')
 
 
