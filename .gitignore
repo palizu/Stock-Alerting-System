@@ -1,6 +1,5 @@
 .DS_Store
 env/*
-*.tar.gz
 kafka-logs/*
 zookeeper/*
 *.pyc
