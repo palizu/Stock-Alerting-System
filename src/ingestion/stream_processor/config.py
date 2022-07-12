@@ -1,12 +1,3 @@
-#db config
-
-host = '127.0.0.1'
-database = 'StockAlertingSystem'
-username = 'root'
-password = 'manchester01'
-port = 3306
-
-
 TICKERS = ['AAA', 'AAM', 'AAT', 'ABR', 'ABS', 'ABT', 'ACB', 'ACC', 'ACL', 'ADG', 'ADS', 'AGG', 'AGM', 'AGR', 'AMD', 
                 'ANV', 'APC', 'APG', 'APH', 'ASG', 'ASM', 'ASP', 'AST', 'BAF', 'BBC', 'BCE', 'BCG', 'BCM', 'BFC', 'BHN', 
                 'BIC', 'BID', 'BKG', 'BMC', 'BMI', 'BMP', 'BRC', 'BSI', 'BTP', 'BTT', 'BVH', 'BWE', 'C32', 'C47', 'CACB2102', 
@@ -67,17 +58,16 @@ TICKERS = ['AAA', 'AAM', 'AAT', 'ABR', 'ABS', 'ABT', 'ACB', 'ACC', 'ACL', 'ADG',
 
 
 #db config
-
 host = '127.0.0.1'
 database = 'StockAlertingSystem'
 username = 'root'
-password = 'FbpD@2926[]'
+password = ''
 port = 3306
 
 # ssi config
 auth_type = 'Bearer'
-consumerID = 'cb751a5fff2345488f3a20b8137f048f'
-consumerSecret = '71532e139f5947909f5d5e15893a49d7'
+consumerID = ''
+consumerSecret = ''
 access_jwt = ''
 url = 'https://fc-data.ssi.com.vn/'
 stream_url = 'https://fc-data.ssi.com.vn/'

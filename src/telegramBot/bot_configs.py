@@ -1,4 +1,4 @@
-TOKEN = '5386965479:AAFjT0giz4iIoyRIylfAF4Qci9ijjkPCTw8'
+TOKEN = ''
 
 TICKERS = ['AAA', 'AAM', 'AAT', 'ABR', 'ABS', 'ABT', 'ACB', 'ACC', 'ACL', 'ADG', 'ADS', 'AGG', 'AGM', 'AGR', 'AMD', 
                 'ANV', 'APC', 'APG', 'APH', 'ASG', 'ASM', 'ASP', 'AST', 'BAF', 'BBC', 'BCE', 'BCG', 'BCM', 'BFC', 'BHN', 
@@ -72,13 +72,13 @@ NO_CONDITION_OM_TICKER_MESSAGE = "You have no alert on %s yet. Create one with /
 mysql_host = '127.0.0.1'
 mysql_database = 'StockAlertingSystem'
 mysql_username = 'root'
-mysql_password = 'FbpD@2926[]'
+mysql_password = ''
 mysql_port = 3306
 
 influx_host = '127.0.0.1'
 influx_port = 8086
 influx_username = 'admin'
-influx_password = 'FbpD@2926[]'
+influx_password = ''
 
 # alert message
 GT_MESSAGE = "Alert on {}: Price went above your theshold!!\nCurrent price: {}"
