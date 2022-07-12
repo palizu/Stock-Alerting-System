@@ -7,3 +7,6 @@ src/ingestion/stream_processor/checkpoint_dir
 src/ingestion/stream_processor/test_data
 src/ingestion/producer/kafka-logs/*
 src/ingestion/producer/zookeeper/*
+src/ingestion/producer/ssi_config.py
+src/ingestion/stream_processor/config.py
+src/telegramBot/bot_configs.py
