@@ -52,7 +52,7 @@ class PushNotificationBot():
                 "group_id" : "group-1"
             }
         self.consumer = KafkaConsumer(**consumer_configs)
-        self.consumer.subscribe(['price', 'ma20', 'macd'])
+        self.consumer.subscribe(['price', 'MA50', 'MA20', 'MACD', 'EMA12', 'EMA26'])
 
     async def consume(self):
         while True:
@@ -61,26 +61,20 @@ class PushNotificationBot():
             for topic_partition, messages in raw_messages.items():
                 if topic_partition.topic == "price":
                     await self.process_price_info(messages)
+                else:
+                    self.process_other(messages, topic_partition.topic)
+
+    def process_other(self, messages, topic):
+        for message in messages:
+            ticker = message.key
+            val = message.value
+            print(f"Topic: {topic} -- Ticker: {ticker}: {val}")
 
     async def process_price_info(self, messages):
-        data_points = []
         for message in messages:
             ticker = message.key
             cur_price = message.value / 1000
             prev_price = self.r.get(f"price:{ticker}")
-
-            point = {
-                "measurement" : "price",
-                "tags" : {
-                    "ticker" : ticker
-                    },
-                "fields" : {
-                    "ticker" : ticker,
-                    "price" : cur_price
-                },
-                "time" : int(datetime.combine(datetime.now(), time.min).timestamp())
-            }
-            data_points.append(point)
 
             if prev_price is None:
                 self.r.set(f"price:{ticker}", cur_price)
@@ -95,8 +89,6 @@ class PushNotificationBot():
                 await self.send_alerts(alert_chat_ids_gt, ticker, cur_price, 1)
             
             self.r.set(f"price:{ticker}", cur_price)
-
-        self.influx_client.write_points(data_points)
 
 
     async def send_alerts(self, chat_ids, ticker, cur_price, direction):
