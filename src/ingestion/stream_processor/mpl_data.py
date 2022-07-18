@@ -9,9 +9,10 @@ import time
 import pandas as pd
 import config
 
-spark = SparkSession.builder.appName("mnpl_data").master("spark://vds-vanhta2:7077").getOrCreate()
 
-df = spark.read.parquet("src/ingestion/stream_processor/past_data")
+# spark = SparkSession.builder.appName("mnpl_data").getOrCreate()
+
+# df = spark.read.parquet("src/ingestion/stream_processor/past_data")
 
 # spark.read.parquet("src/ingestion/stream_processor/past_data").createOrReplaceTempView("df")
 # windowSpec = Window.partitionBy(col("Symbol"), col())
@@ -59,18 +60,32 @@ k26 = 2 / 27
 # spark.read.parquet("src/ingestion/stream_processor/past_data").orderBy(["Symbol", "day"]).show()
 
 
-pd_df = df.toPandas()
-pd_df['EMA12'] = pd_df['Close']
-pd_df['EMA26'] = pd_df['Close']
-res = pd.DataFrame(columns=pd_df.columns)
+spark = SparkSession.builder.master("spark://Van.local:7077").appName("mnpl_data").getOrCreate()
+# df = spark.read.parquet("src/ingestion/stream_processor/past_data")
+# df = df.toPandas()
 
-print(pd_df.loc[pd_df['Symbol'] == 'CACB2203']['PARTITION_DATE'].max())
+# mapping = df.loc[df['Symbol'] == 'SJF'][['day', 'PARTITION_DATE']]
+# day_mapping = {}
+# for ind, row in mapping.iterrows():
+#     key = row['PARTITION_DATE']
+#     day = row['day']
+#     day_mapping[key] = day
 
+# for i in range(len(df)):
+#     row = df.iloc[i]
+#     day = day_mapping[row['PARTITION_DATE']]
+#     df.loc[i, 'day'] = day
+
+# df['EMA12'] = df['Close']
+# df['EMA26'] = df['Close']
+# res = pd.DataFrame(columns=df.columns)
 # for ticker in config.TICKERS:
-#     temp_df = pd_df.loc[pd_df["Symbol"] == ticker]
-#     temp_df.loc[temp_df['day'] == 1, 'MACD'] = 0
+#     temp_df = df.loc[df["Symbol"] == ticker].copy()
 #     for i in range(61):
-#         print(f"{ticker} -- {i}")
+#         if i == 0:
+#             temp_df.loc[temp_df['day'] == 1, 'MACD'] = 0
+#         if i + 1 not in df[df.Symbol == ticker]['day'].values:
+#             continue
 #         prev_ema12 = temp_df.loc[temp_df['day'] == i + 1, 'EMA12'].values[0]
 #         prev_ema26 = temp_df.loc[temp_df['day'] == i + 1, 'EMA26'].values[0]
 #         close = temp_df.loc[temp_df['day'] == i + 2, 'Close'].values[0]
@@ -79,8 +94,34 @@ print(pd_df.loc[pd_df['Symbol'] == 'CACB2203']['PARTITION_DATE'].max())
 #         temp_df.loc[temp_df['day'] == i + 2, 'EMA12'] = ema12
 #         temp_df.loc[temp_df['day'] == i + 2, 'EMA26'] = ema26
 #         temp_df.loc[temp_df['day'] == i + 2, 'MACD'] = ema12 - ema26
-
 #     res = pd.concat([res, temp_df])
 
-print(res)
+# schema = (StructType()
+#             .add(StructField("Symbol", StringType()))
+#             .add(StructField("Open", StringType()))
+#             .add(StructField("High", StringType()))
+#             .add(StructField("Low", StringType()))
+#             .add(StructField("Close", StringType()))
+#             .add(StructField("Volume", StringType()))
+#             .add(StructField("Value", StringType()))
+#             .add(StructField("day", StringType()))
+#             .add(StructField("MA20", StringType()))
+#             .add(StructField("MA50", StringType()))
+#             .add(StructField("EMA12", StringType()))
+#             .add(StructField("EMA26", StringType()))
+#             .add(StructField("MACD", StringType()))
+#             .add(StructField("PARTITION_DATE", StringType()))    
+#         )
+# spark_df = spark.createDataFrame(res, schema=schema)
+# spark_df.write.mode('overwrite').partitionBy('PARTITION_DATE').parquet("src/ingestion/stream_processor/past_data")
+# spark_df.show()
 
+df = spark.read.parquet("src/ingestion/stream_processor/past_data")
+df.filter(col("Symbol") == 'SJF').select("day",'MA20', 'MA50', 'MACD', 'EMA12', 'EMA26', 'Close').orderBy("day").show()
+# cols = ['Open', 'High', 'Low', 'Close', 'Volume', 'Value', 'MA20', 'MA50', 'MACD', 'EMA12', 'EMA26']
+# for c in cols:
+#     df = df.withColumn(c, col(c).cast('double'))
+# df = df.withColumn('day', col('day').cast('int'))
+# df.printSchema()
+# df.show()
+# df.write.mode('overwrite').partitionBy('PARTITION_DATE').parquet("src/ingestion/stream_processor/past_data2")
