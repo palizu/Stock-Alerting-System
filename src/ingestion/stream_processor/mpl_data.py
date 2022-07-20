@@ -5,9 +5,11 @@ from pyspark.sql.types import *
 from pyspark.sql.window import *
 from pyspark.sql.streaming import *
 from pyspark.sql import SparkSession
-import time
 import pandas as pd
 import config
+from influxdb_client import InfluxDBClient, Point, WritePrecision
+from influxdb_client.client.write_api import SYNCHRONOUS
+from datetime import datetime
 
 
 # spark = SparkSession.builder.appName("mnpl_data").getOrCreate()
@@ -36,8 +38,8 @@ import config
 
 # df = spark.sql("select *, MA20 as EMA12, MA20 as EMA26 from df")
 
-k12 = 2 / 13
-k26 = 2 / 27
+# k12 = 2 / 13
+# k26 = 2 / 27
 
 # windowSpec = Window.partitionBy(col("Symbol")).orderBy(col("day"))
 # df = df.withColumn("Open", col("Open") / 1000)
@@ -60,7 +62,7 @@ k26 = 2 / 27
 # spark.read.parquet("src/ingestion/stream_processor/past_data").orderBy(["Symbol", "day"]).show()
 
 
-spark = SparkSession.builder.master("spark://Van.local:7077").appName("mnpl_data").getOrCreate()
+# spark = SparkSession.builder.master("spark://Van.local:7077").appName("mnpl_data").getOrCreate()
 # df = spark.read.parquet("src/ingestion/stream_processor/past_data")
 # df = df.toPandas()
 
@@ -116,8 +118,8 @@ spark = SparkSession.builder.master("spark://Van.local:7077").appName("mnpl_data
 # spark_df.write.mode('overwrite').partitionBy('PARTITION_DATE').parquet("src/ingestion/stream_processor/past_data")
 # spark_df.show()
 
-df = spark.read.parquet("src/ingestion/stream_processor/past_data")
-df.filter(col("Symbol") == 'SJF').select("day",'MA20', 'MA50', 'MACD', 'EMA12', 'EMA26', 'Close').orderBy("day").show()
+# df = spark.read.parquet("src/ingestion/stream_processor/past_data")
+# df.filter(col("Symbol") == 'FPT').select("day",'MA20', 'MA50', 'MACD', 'EMA12', 'EMA26', 'Close').orderBy("day").show()
 # cols = ['Open', 'High', 'Low', 'Close', 'Volume', 'Value', 'MA20', 'MA50', 'MACD', 'EMA12', 'EMA26']
 # for c in cols:
 #     df = df.withColumn(c, col(c).cast('double'))
@@ -125,3 +127,34 @@ df.filter(col("Symbol") == 'SJF').select("day",'MA20', 'MA50', 'MACD', 'EMA12', 
 # df.printSchema()
 # df.show()
 # df.write.mode('overwrite').partitionBy('PARTITION_DATE').parquet("src/ingestion/stream_processor/past_data2")
+
+spark = SparkSession.builder.master("spark://Van.local:7077").appName("mnpl_data").getOrCreate()
+df = spark.read.parquet("src/ingestion/stream_processor/past_data")
+df = df.toPandas()
+
+# print(df.columns)
+client = InfluxDBClient(url="http://127.0.0.1:8086", token=config.influx_token, org=config.influx_org)
+write_api = client.write_api(write_options=SYNCHRONOUS)
+
+
+for ind, row in df.iterrows():
+    (symbol, open, high, low, close, volume, value, _, ma20, ma50, ema12, ema26, macd, date) = row
+    time = int(datetime.strptime(str(date),'%Y%m%d').timestamp()) * 1000000000
+    print(time)
+    # data = f"market_data,ticker={symbol} Open={open},High={high},Low={low},Close={close},Volume={volume},Value={value},\
+    #         MA20={ma20},MA50={ma50},EMA12={ema12},EMA26={ema26},MACD={macd} {time*1000000}"
+    p = Point("stock_info").tag("ticker", symbol) \
+            .field("Open", open) \
+            .field("High", high) \
+            .field("Low", low) \
+            .field("Close", close) \
+            .field("Volume", volume) \
+            .field("Value", value) \
+            .field("MA20", ma20) \
+            .field("MA50", ma50) \
+            .field("EMA12", ema12) \
+            .field("EMA26", ema26) \
+            .field("MACD", macd) \
+            .time(time)
+    write_api.write(config.influx_bucket, config.influx_org, p)
+    print("Writen...." + str(p.to_line_protocol()))

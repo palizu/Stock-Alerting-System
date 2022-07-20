@@ -59,46 +59,37 @@ class PushNotificationBot():
             raw_messages = self.consumer.poll(2000)
 
             for topic_partition, messages in raw_messages.items():
-                if topic_partition.topic == "price":
-                    await self.process_price_info(messages)
-                else:
-                    self.process_other(messages, topic_partition.topic)
+                await self.process_messages(messages, topic_partition.topic)
 
-    def process_other(self, messages, topic):
+    async def process_messages(self, messages, topic):
         for message in messages:
             ticker = message.key
-            val = message.value
-            print(f"Topic: {topic} -- Ticker: {ticker}: {val}")
+            cur = message.value
+            prev = self.r.get(f"{topic}:{ticker}")
 
-    async def process_price_info(self, messages):
-        for message in messages:
-            ticker = message.key
-            cur_price = message.value / 1000
-            prev_price = self.r.get(f"price:{ticker}")
-
-            if prev_price is None:
-                self.r.set(f"price:{ticker}", cur_price)
+            if prev is None:
+                self.r.set(f"{topic}:{ticker}", cur)
                 return
 
-            prev_price = float(prev_price)
-            alert_chat_ids_lt = self.r.zrangebyscore(f"alert:{ticker}:lt", cur_price, '+inf')
-            if len(alert_chat_ids_lt) > 0 and cur_price < prev_price:
-                await self.send_alerts(alert_chat_ids_lt, ticker, cur_price, 0)
-            alert_chat_ids_gt = self.r.zrangebyscore(f"alert:{ticker}:gt", cur_price, '+inf')
-            if len(alert_chat_ids_gt) > 0 and cur_price > prev_price:
-                await self.send_alerts(alert_chat_ids_gt, ticker, cur_price, 1)
+            prev = float(prev)
+            alert_chat_ids_lt = self.r.zrangebyscore(f"{topic}:{ticker}:lt", cur, '+inf')
+            if len(alert_chat_ids_lt) > 0 and cur < prev:
+                await self.send_alerts(alert_chat_ids_lt, ticker, topic, cur, 0)
+            alert_chat_ids_gt = self.r.zrangebyscore(f"{topic}:{ticker}:gt", cur, '+inf')
+            if len(alert_chat_ids_gt) > 0 and cur > prev:
+                await self.send_alerts(alert_chat_ids_gt, ticker, topic, cur, 1)
             
-            self.r.set(f"price:{ticker}", cur_price)
+            self.r.set(f"{topic}:{ticker}", cur)
 
 
-    async def send_alerts(self, chat_ids, ticker, cur_price, direction):
+    async def send_alerts(self, chat_ids, ticker, cur_value, indicator, direction):
         if direction == 0:
             msg = bot_configs.LT_MESSAGE
         else:
             msg = bot_configs.GT_MESSAGE
         print(chat_ids)
         for chat_id in chat_ids:
-            text_msg = msg.format(ticker, cur_price)
+            text_msg = msg.format(ticker, indicator, cur_value)
             await self.bot.send_message(chat_id=chat_id.decode('utf-8'), text=text_msg)
 
     def __del__(self):
