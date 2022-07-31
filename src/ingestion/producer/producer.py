@@ -38,7 +38,7 @@ class MarketDataProducer():
                 'High':data['High'],
                 'Low':data['Low'],
                 'Close':data['Close'],
-                'Volume':data['Volume'],
+                'Volume':data['TotalVol']
             }
             logging.info("Sending: " + str(row))
             self.producer.send('market_data', value=row, key=row['Symbol'])
@@ -49,7 +49,7 @@ class MarketDataProducer():
     def produce_from_api(self):
         token = ssi_fc_data.access_token(config=config)
         config.access_jwt = token['data']['accessToken']
-        channel = "B:ALL"
+        channel = "X:ALL"
         ssi_fc_data.Market_Data_Stream(config, self.process_message, self.process_error, channel)
 
     # testing
@@ -63,6 +63,7 @@ class MarketDataProducer():
                         data['High'], data['Low'], data['Close'], data['Volume']]
                 df.loc[len(df)] = row
         df = df.sort_values('Time')
+        vol = {}
         for index, row in df.iterrows():
             data_row = {
                 'Symbol':row['Symbol'],
@@ -72,8 +73,13 @@ class MarketDataProducer():
                 'High':row['High'],
                 'Low':row['Low'],
                 'Close':row['Close'],
-                'Volume':row['Volume'],
+                'Volume':row['Volume']
             }
+            if data_row['Symbol'] in vol:
+                vol[data_row['Symbol']] = vol[data_row['Symbol']] + data_row['Volume']
+                data_row['Volume'] = vol[data_row['Symbol']]
+            else:
+                vol[data_row['Symbol']] = data_row['Volume']
             logging.info("Sending: " + str(data_row))
             self.producer.send('market_data', value=data_row, key=data_row['Symbol'])
             if index % 5 == 0:
