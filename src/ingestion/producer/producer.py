@@ -1,4 +1,3 @@
-from math import prod
 import ssi_fc_data
 import json
 import ssi_config as config
@@ -38,8 +37,11 @@ class MarketDataProducer():
                 'High':data['High'],
                 'Low':data['Low'],
                 'Close':data['Close'],
-                'Volume':data['TotalVol']
+                'Volume':data['TotalVol'],
+                'Change':data['Change'],
             }
+            if row['Symbol'] not in config.TICKER:
+                return
             logging.info("Sending: " + str(row))
             self.producer.send('market_data', value=row, key=row['Symbol'])
 
@@ -54,13 +56,13 @@ class MarketDataProducer():
 
     # testing
     def produce_from_file(self, file_path):
-        df = pd.DataFrame(columns=['Symbol', 'TradingDate', 'Time', 'Open', 'High', 'Low', 'Close', 'Volume'])
+        df = pd.DataFrame(columns=['Symbol', 'TradingDate', 'Time', 'Open', 'High', 'Low', 'Close', 'Volume', 'TotalVol', 'Change'])
         with open(file_path, 'r') as f:
             lines = f.readlines()
             for line in lines:
                 data = json.loads(line)
                 row = [data['Symbol'], data['TradingDate'], data['Time'], data['Open'], \
-                        data['High'], data['Low'], data['Close'], data['Volume']]
+                        data['High'], data['Low'], data['Close'], data['Volume'], data['TotalVol'], data['Change']]
                 df.loc[len(df)] = row
         df = df.sort_values('Time')
         vol = {}
@@ -73,13 +75,9 @@ class MarketDataProducer():
                 'High':row['High'],
                 'Low':row['Low'],
                 'Close':row['Close'],
-                'Volume':row['Volume']
+                'Volume':row['TotalVol'],
+                'Change':row['Change'],
             }
-            if data_row['Symbol'] in vol:
-                vol[data_row['Symbol']] = vol[data_row['Symbol']] + data_row['Volume']
-                data_row['Volume'] = vol[data_row['Symbol']]
-            else:
-                vol[data_row['Symbol']] = data_row['Volume']
             logging.info("Sending: " + str(data_row))
             self.producer.send('market_data', value=data_row, key=data_row['Symbol'])
             if index % 5 == 0:

@@ -144,7 +144,12 @@ class StreamProcessor():
                 .withColumn("High", col("High").cast(DoubleType()) / 1000) \
                 .withColumn("Low", col("Low").cast(DoubleType()) / 1000) \
                 .withColumn("Close", col("Close").cast(DoubleType()) / 1000) \
-                .withColumn("Volume", col("Volume").cast(DoubleType())) 
+                .withColumn("Volume", col("Volume").cast(DoubleType())) \
+                .withColumn("Change", col("Change").cast(DoubleType()) / 1000) 
+
+        tbl = tbl.withColumn("Up_Change", when(col("Change") < 0, 0).otherwise(col("Change")) \
+                .withColumn("Down_Change", when(col("Change") > 0, 0).otherwise(0 - col("Change"))) \
+            )
 
         tbl = (tbl
             .withColumn("timestamp", to_timestamp(to_date(concat_ws(" ", "TradingDate", "Time"), 'dd/MM/yyyy HH:mm:ss')))
