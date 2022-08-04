@@ -52,7 +52,7 @@ class PushNotificationBot():
                 "group_id" : "group-1"
             }
         self.consumer = KafkaConsumer(**consumer_configs)
-        self.consumer.subscribe(['price', 'MA50', 'MA20', 'MACD', 'EMA12', 'EMA26'])
+        self.consumer.subscribe(['price', 'MA50', 'MA20', 'EMA12', 'RSI', 'EMA26', 'MACD'])
 
     async def consume(self):
         while True:

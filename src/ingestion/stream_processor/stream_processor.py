@@ -71,17 +71,18 @@ class StreamProcessor():
         df = df.withColumn("MA20", (col("prev_MA20") * 20 - col("prev_20_close") + col("Close")) / 20) \
                 .withColumn("MA50", (col("prev_MA50") * 50 - col("prev_50_close") + col("Close")) / 50) \
                 .withColumn("EMA12", col("Close") * self.k12 + col("prev_EMA12") * (1- self.k12)) \
-                .withColumn("EMA26", col("Close") * self.k26 + col("prev_EMA26") * (1- self.k26)) 
+                .withColumn("EMA26", col("Close") * self.k26 + col("prev_EMA26") * (1- self.k26)) \
+                .withColumn("RSI", col("prev_RSI") * 14 - col("prev_14_UpChange") ) 
         df = df.withColumn("MACD", col("EMA12") - col("EMA26"))
         df = df.withColumn("SIGNAL_LINE", col("MACD") * self.k9 + col("prev_SIGNAL_LINE") * (1- self.k9))
 
         df.persist()
         kafka_df = df.selectExpr("'price' as topic", "CAST(Symbol as STRING) as key", "CAST(Close as STRING) as value") \
                     .unionAll(df.selectExpr("'MA20' as topic", "CAST(Symbol as STRING) as key", "CAST(MA20 as STRING) as value")) \
-                    .unionAll(df.selectExpr("'MA50' as topic", "CAST(Symbol as STRING) as key", "CAST(MA50 as STRING) as value")) 
-                    # .unionAll(df.selectExpr("CAST(Symbol as STRING) as key", "CAST(EMA12 as STRING) as value", "'EMA12' as topic")) \
-                    # .unionAll(df.selectExpr("CAST(Symbol as STRING) as key", "CAST(EMA26 as STRING) as value", "'EMA26' as topic")) \
-                    # .unionAll(df.selectExpr("CAST(Symbol as STRING) as key", "CAST(MACD as STRING) as value", "'MACD' as topic"))  
+                    .unionAll(df.selectExpr("'MA50' as topic", "CAST(Symbol as STRING) as key", "CAST(MA50 as STRING) as value")) \
+                    .unionAll(df.selectExpr("CAST(Symbol as STRING) as key", "CAST(EMA12 as STRING) as value", "'EMA12' as topic")) \
+                    .unionAll(df.selectExpr("CAST(Symbol as STRING) as key", "CAST(EMA26 as STRING) as value", "'EMA26' as topic")) \
+                    .unionAll(df.selectExpr("CAST(Symbol as STRING) as key", "CAST(MACD as STRING) as value", "'MACD' as topic"))  
         kafka_df.write \
                 .format("kafka") \
                 .option("kafka.bootstrap.servers", "127.0.0.1:9092") \

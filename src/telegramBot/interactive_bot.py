@@ -86,7 +86,7 @@ class InteractiveBot():
                 UPDATE_THRESHOLD:[ MessageHandler(filters.TEXT & ~filters.COMMAND, self.update_threshold),],
                 EXEC_UPDATE_COMMAND: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.exec_update_command),]
             },
-            fallbacks=[CommandHandler("update", self.remove_condition)]
+            fallbacks=[CommandHandler("update", self.update_condition)]
         )
 
         self.application = ApplicationBuilder().token(bot_configs.TOKEN).build()
@@ -192,6 +192,10 @@ class InteractiveBot():
                 msg = f"Okay send alert when {context.user_data['tech_indi']} is {text} ... how much? Enter the threshold to complete the condition"
                 await update.message.reply_text(msg)
                 return EXEC_ADD_COMMAND
+            else:
+                msg = f"You have set this condition with threshold: {row[3]}"
+                await context.bot.send_message(chat_id=chat_id, text=msg)
+                return END_CONVERSATION
         elif text == "less than":
             context.user_data['direction'] = 0
             direction = 0
@@ -202,6 +206,10 @@ class InteractiveBot():
                 msg = f"Okay send alert when {context.user_data['tech_indi']} is {text} ... how much? Enter the threshold to complete the condition"
                 await update.message.reply_text(msg)
                 return EXEC_ADD_COMMAND
+            else:
+                msg = f"You have set this condition with threshold: {row[3]}"
+                await context.bot.send_message(chat_id=chat_id, text=msg)
+                return END_CONVERSATION
         else:
             await update.message.reply_text("Wrong direction! Please use the two button below or type in \"less than\"/\"greater than\" in the chat.",
                     reply_markup=ReplyKeyboardMarkup(bot_configs.DIRECTION_BUTTON,  one_time_keyboard=True, resize_keyboard=True))
