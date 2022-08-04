@@ -33,6 +33,10 @@ class StreamProcessor():
         self.new_day = self.past_data.agg(max("day")).collect()[0]["max(day)"] + 1
         self.prev_20_close_df = self.past_data.filter(col("day") == self.new_day - 20).selectExpr("Symbol", "Close as prev_20_close")
         self.prev_50_close_df = self.past_data.filter(col("day") == self.new_day - 50).selectExpr("Symbol", "Close as prev_50_close")
+        self.prev_avg_changes_df = self.past_data.filter(col("day") >= self.new_day - 13).groupBy("Symbol").agg(
+            sum("Up_Change").alias("sum_13_UpChange"),
+            sum("Down_Change").alias("sum_13_DownChange"),
+        )
         self.k12 = 2/13
         self.k26 = 2/27
         self.k9 = 2/10
@@ -40,7 +44,8 @@ class StreamProcessor():
                                 .selectExpr("Symbol", "MA20 as prev_MA20", "MA50 as prev_MA50", "EMA12 as prev_EMA12", "EMA26 as prev_EMA26", "SIGNAL_LINE as prev_SIGNAL_LINE")
         self.prev_day_df = self.prev_day_df \
                                 .join(self.prev_20_close_df, ["Symbol"], "inner") \
-                                .join(self.prev_50_close_df, ["Symbol"], "inner")
+                                .join(self.prev_50_close_df, ["Symbol"], "inner") \
+                                .join(self.prev_avg_changes_df, ["Symbol"], "inner")
         # self.today_timestamp = int(datetime.strptime(datetime.strftime(datetime.today(),"%d/%m/%Y"), "%d/%m/%Y").timestamp())
         self.today_timestamp = int(datetime.strptime("04/07/2022", "%d/%m/%Y").replace(tzinfo=gettz('Asia/Ho_Chi_Minh')).timestamp())
     
@@ -72,7 +77,7 @@ class StreamProcessor():
                 .withColumn("MA50", (col("prev_MA50") * 50 - col("prev_50_close") + col("Close")) / 50) \
                 .withColumn("EMA12", col("Close") * self.k12 + col("prev_EMA12") * (1- self.k12)) \
                 .withColumn("EMA26", col("Close") * self.k26 + col("prev_EMA26") * (1- self.k26)) \
-                .withColumn("RSI", col("prev_RSI") * 14 - col("prev_14_UpChange") ) 
+                .withColumn("RSI", 100 - 100 / (1 + (col("sum_13_UpChange") + col("Up_Change")) / col("sum_13_DownChange") + col("Down_Change"))) 
         df = df.withColumn("MACD", col("EMA12") - col("EMA26"))
         df = df.withColumn("SIGNAL_LINE", col("MACD") * self.k9 + col("prev_SIGNAL_LINE") * (1- self.k9))
 
@@ -82,7 +87,8 @@ class StreamProcessor():
                     .unionAll(df.selectExpr("'MA50' as topic", "CAST(Symbol as STRING) as key", "CAST(MA50 as STRING) as value")) \
                     .unionAll(df.selectExpr("CAST(Symbol as STRING) as key", "CAST(EMA12 as STRING) as value", "'EMA12' as topic")) \
                     .unionAll(df.selectExpr("CAST(Symbol as STRING) as key", "CAST(EMA26 as STRING) as value", "'EMA26' as topic")) \
-                    .unionAll(df.selectExpr("CAST(Symbol as STRING) as key", "CAST(MACD as STRING) as value", "'MACD' as topic"))  
+                    .unionAll(df.selectExpr("CAST(Symbol as STRING) as key", "CAST(MACD as STRING) as value", "'MACD' as topic"))  \
+                    .unionAll(df.selectExpr("CAST(Symbol as STRING) as key", "CAST(RSI as STRING) as value", "'RSI' as topic"))
         kafka_df.write \
                 .format("kafka") \
                 .option("kafka.bootstrap.servers", "127.0.0.1:9092") \
