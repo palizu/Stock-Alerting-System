@@ -56,16 +56,20 @@ class MarketDataProducer():
 
     # testing
     def produce_from_file(self, file_path):
-        df = pd.DataFrame(columns=['Symbol', 'TradingDate', 'Time', 'Open', 'High', 'Low', 'Close', 'Volume', 'TotalVol', 'Change'])
+        print("here")
+        df_data = []
         with open(file_path, 'r') as f:
             lines = f.readlines()
             for line in lines:
                 data = json.loads(line)
                 row = [data['Symbol'], data['TradingDate'], data['Time'], data['Open'], \
                         data['High'], data['Low'], data['Close'], data['Volume'], data['TotalVol'], data['Change']]
-                df.loc[len(df)] = row
+                df_data.append(row)
+        
+        df = pd.DataFrame(columns=['Symbol', 'TradingDate', 'Time', 'Open', 'High', 'Low', 
+                        'Close', 'Volume', 'TotalVol', 'Change'], data=df_data)
         df = df.sort_values('Time')
-        vol = {}
+        print("Start producing")
         for index, row in df.iterrows():
             data_row = {
                 'Symbol':row['Symbol'],

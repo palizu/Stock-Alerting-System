@@ -72,52 +72,58 @@ class StreamProcessor():
         
 
     def process_batch(self, df, epoch_id):
+        # df.printSchema()
         df = df.join(self.prev_day_df, ["Symbol"], "inner")
         df = df.withColumn("MA20", (col("prev_MA20") * 20 - col("prev_20_close") + col("Close")) / 20) \
                 .withColumn("MA50", (col("prev_MA50") * 50 - col("prev_50_close") + col("Close")) / 50) \
                 .withColumn("EMA12", col("Close") * self.k12 + col("prev_EMA12") * (1- self.k12)) \
-                .withColumn("EMA26", col("Close") * self.k26 + col("prev_EMA26") * (1- self.k26)) \
-                .withColumn("RSI", 100 - 100 / (1 + (col("sum_13_UpChange") + col("Up_Change")) / col("sum_13_DownChange") + col("Down_Change"))) 
+                .withColumn("EMA26", col("Close") * self.k26 + col("prev_EMA26") * (1- self.k26)) 
+                # .withColumn("RSI", 100 - 100 / (1 + (col("sum_13_UpChange") + col("Up_Change")) / col("sum_13_DownChange") + col("Down_Change"))) 
         df = df.withColumn("MACD", col("EMA12") - col("EMA26"))
         df = df.withColumn("SIGNAL_LINE", col("MACD") * self.k9 + col("prev_SIGNAL_LINE") * (1- self.k9))
 
-        df.persist()
+        # df.persist()
         kafka_df = df.selectExpr("'price' as topic", "CAST(Symbol as STRING) as key", "CAST(Close as STRING) as value") \
                     .unionAll(df.selectExpr("'MA20' as topic", "CAST(Symbol as STRING) as key", "CAST(MA20 as STRING) as value")) \
                     .unionAll(df.selectExpr("'MA50' as topic", "CAST(Symbol as STRING) as key", "CAST(MA50 as STRING) as value")) \
-                    .unionAll(df.selectExpr("CAST(Symbol as STRING) as key", "CAST(EMA12 as STRING) as value", "'EMA12' as topic")) \
-                    .unionAll(df.selectExpr("CAST(Symbol as STRING) as key", "CAST(EMA26 as STRING) as value", "'EMA26' as topic")) \
-                    .unionAll(df.selectExpr("CAST(Symbol as STRING) as key", "CAST(MACD as STRING) as value", "'MACD' as topic"))  \
-                    .unionAll(df.selectExpr("CAST(Symbol as STRING) as key", "CAST(RSI as STRING) as value", "'RSI' as topic"))
+                    .unionAll(df.selectExpr("'EMA12' as topic", "CAST(Symbol as STRING) as key", "CAST(EMA12 as STRING) as value")) \
+                    .unionAll(df.selectExpr("'EMA26' as topic", "CAST(Symbol as STRING) as key", "CAST(EMA26 as STRING) as value", )) \
+                    .unionAll(df.selectExpr("'MACD' as topic", "CAST(Symbol as STRING) as key", "CAST(MACD as STRING) as value" ))  
+                    # .unionAll(df.selectExpr("'RSI' as topic", "CAST(Symbol as STRING) as key", "CAST(RSI as STRING) as value")) \
+                    # .unionAll(df.selectExpr("'Open' as topic", "CAST(Symbol as STRING) as key", "CAST(Open as STRING) as value")) \
+                    # .unionAll(df.selectExpr("'High' as topic", "CAST(Symbol as STRING) as key", "CAST(High as STRING) as value")) \
+                    # .unionAll(df.selectExpr("'Low' as topic", "CAST(Symbol as STRING) as key", "CAST(Low as STRING) as value")) \
+                    # .unionAll(df.selectExpr("'Volume' as topic", "CAST(Symbol as STRING) as key", "CAST(Volume as STRING) as value")) 
         kafka_df.write \
                 .format("kafka") \
                 .option("kafka.bootstrap.servers", "127.0.0.1:9092") \
                 .save()
         
-        influx_df = df.toPandas()
-        points = []
-        for ind, row in influx_df.iterrows():
-            p = Point("stock_info").tag("ticker", row['Symbol']) \
-                    .field("open", row['Open']) \
-                    .field("high", row['High']) \
-                    .field("low", row['Low']) \
-                    .field("close", row['Close']) \
-                    .field("volume", row['Volume']) \
-                    .field("MA20", row['MA20']) \
-                    .field("MA50", row['MA50']) \
-                    .field("EMA12", row['EMA12']) \
-                    .field("EMA26", row['EMA26']) \
-                    .field("MACD", row['MACD']) \
-                    .field("SIGNAL_LINE", row['SIGNAL_LINE']) \
-                    .time(self.today_timestamp * 1000000000)
-            points.append(p)
-            if len(points) == 5000:
-                self.write_api.write(config.influx_bucket, config.influx_org, points)
-                points = []
-                print(f"Writen {len(points)} data points to influxdb")
-        self.write_api.write(config.influx_bucket, config.influx_org, points)
-        print(f"Writen {len(points)} data points to influxdb")
-        df.unpersist()
+        # influx_df = df.toPandas()
+        # points = []
+        # for ind, row in influx_df.iterrows():
+        #     p = Point("stock_info").tag("ticker", row['Symbol']) \
+        #             .field("open", row['Open']) \
+        #             .field("high", row['High']) \
+        #             .field("low", row['Low']) \
+        #             .field("close", row['Close']) \
+        #             .field("volume", row['Volume']) \
+        #             .field("MA20", row['MA20']) \
+        #             .field("MA50", row['MA50']) \
+        #             .field("EMA12", row['EMA12']) \
+        #             .field("EMA26", row['EMA26']) \
+        #             .field("MACD", row['MACD']) \
+        #             .field("SIGNAL_LINE", row['SIGNAL_LINE']) \
+        #             .field("RSI", row['SIGNAL_LINE']) \
+        #             .time(self.today_timestamp * 1000000000)
+        #     points.append(p)
+        #     if len(points) == 5000:
+        #         self.write_api.write(config.influx_bucket, config.influx_org, points)
+        #         points = []
+        #         print(f"Writen {len(points)} data points to influxdb")
+        # self.write_api.write(config.influx_bucket, config.influx_org, points)
+        # print(f"Writen {len(points)} data points to influxdb")
+        # df.unpersist()
 
 
     def process(self):
@@ -130,6 +136,7 @@ class StreamProcessor():
                 .add(StructField("Low", StringType()))
                 .add(StructField("Close", StringType()))
                 .add(StructField("Volume", StringType()))
+                .add(StructField("Change", StringType()))
             )
 
         self.df = (self.spark
@@ -152,15 +159,14 @@ class StreamProcessor():
                 .withColumn("Low", col("Low").cast(DoubleType()) / 1000) \
                 .withColumn("Close", col("Close").cast(DoubleType()) / 1000) \
                 .withColumn("Volume", col("Volume").cast(DoubleType())) \
-                .withColumn("Change", col("Change").cast(DoubleType()) / 1000) 
-
-        tbl = tbl.withColumn("Up_Change", when(col("Change") < 0, 0).otherwise(col("Change")) \
-                .withColumn("Down_Change", when(col("Change") > 0, 0).otherwise(0 - col("Change"))) \
-            )
+                .withColumn("Change", col("Change").cast(DoubleType()) / 1000) \
+                # .withColumn("Up_Change", expr("CASE WHEN Change > 0 then Change / 1000 else 0 end")) \
+                # .withColumn("Down_Change", expr("CASE WHEN Change < 0 then 0 - Change / 1000 else 0 end"))
+            
 
         tbl = (tbl
             .withColumn("timestamp", to_timestamp(to_date(concat_ws(" ", "TradingDate", "Time"), 'dd/MM/yyyy HH:mm:ss')))
-            .withWatermark("timestamp", "1 minutes")
+            .withWatermark("timestamp", "30 seconds")
             .groupBy("Symbol")
             .agg(
                 last("Open").alias("Open"),
@@ -168,13 +174,15 @@ class StreamProcessor():
                 last("Low").alias("Low"),
                 last("Close").alias("Close"), 
                 last("Volume").alias("Volume"), 
+                # last("Up_Change").alias("Up_Change"), 
+                # last("Down_Change").alias("Down_Change"), 
             )
         )
 
         streaming_query = (tbl.writeStream
                             .outputMode("Complete")
                             .foreachBatch(self.process_batch)
-                            .trigger(processingTime = "1 minutes")
+                            .trigger(processingTime = "30 seconds")
                             .option("checkpointLocation", "src/ingestion/stream_processor/checkpoint_dir")
                             .start()    
                         )

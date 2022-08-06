@@ -48,7 +48,7 @@ class PushNotificationBot():
             consumer_configs = {
                 "bootstrap_servers" : ["127.0.0.1:9092"],
                 "key_deserializer" : lambda x: x.decode("utf-8"),
-                "value_deserializer" : lambda x: float(x),
+                # "value_deserializer" : lambda x: float(x),
                 "group_id" : "group-1"
             }
         self.consumer = KafkaConsumer(**consumer_configs)
@@ -59,6 +59,7 @@ class PushNotificationBot():
             raw_messages = self.consumer.poll(2000)
 
             for topic_partition, messages in raw_messages.items():
+                print(messages)
                 await self.process_messages(messages, topic_partition.topic)
 
     async def process_messages(self, messages, topic):
