@@ -49,26 +49,26 @@ class StreamProcessor():
         # self.today_timestamp = int(datetime.strptime(datetime.strftime(datetime.today(),"%d/%m/%Y"), "%d/%m/%Y").timestamp())
         self.today_timestamp = int(datetime.strptime("04/07/2022", "%d/%m/%Y").replace(tzinfo=gettz('Asia/Ho_Chi_Minh')).timestamp())
     
-        try: 
-            connection = mysql.connector.connect(
-                host=config.host,
-                database=config.database,
-                port=config.port,
-                user=config.username,
-                password=config.password
-            )
-            if connection.is_connected():
-                self.connection = connection
-                logging.info(connection.get_server_info())
-                self.cursor = connection.cursor()
-                self.cursor.execute("select database();")
-                record = self.cursor.fetchone()
-                logging.info(f"You're connected to database: {record}")
-        except Error as e:
-            logging.error("Error while connecting to MySQL:\n" + e)
+        # try: 
+        #     connection = mysql.connector.connect(
+        #         host=config.host,
+        #         database=config.database,
+        #         port=config.port,
+        #         user=config.username,
+        #         password=config.password
+        #     )
+        #     if connection.is_connected():
+        #         self.connection = connection
+        #         logging.info(connection.get_server_info())
+        #         self.cursor = connection.cursor()
+        #         self.cursor.execute("select database();")
+        #         record = self.cursor.fetchone()
+        #         logging.info(f"You're connected to database: {record}")
+        # except Error as e:
+        #     logging.error("Error while connecting to MySQL:\n" + e)
 
-        self.influx_client = InfluxDBClient(url=config.influx_server, token=config.influx_token, org=config.influx_org)
-        self.write_api = self.influx_client.write_api(write_options=SYNCHRONOUS)
+        # self.influx_client = InfluxDBClient(url=config.influx_server, token=config.influx_token, org=config.influx_org)
+        # self.write_api = self.influx_client.write_api(write_options=SYNCHRONOUS)
         
 
     def process_batch(self, df, epoch_id):

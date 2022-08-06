@@ -109,9 +109,9 @@ class InteractiveBot():
         for condition in conditions:
             (chat_id, ticker, indicator, threshold, direction) = condition
             if direction == 0:
-                self.r.zadd(f'{indicator}:{ticker}:lt', {chat_id : threshold})
+                self.r.zadd(f'alert:{indicator.upper()}:{ticker}:lt', {chat_id : threshold})
             else:
-                self.r.zadd(f'{indicator}:{ticker}:gt', {chat_id : threshold})
+                self.r.zadd(f'alert:{indicator.upper()}:{ticker}:gt', {chat_id : threshold})
 
         
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -48,7 +48,7 @@ class PushNotificationBot():
             consumer_configs = {
                 "bootstrap_servers" : ["127.0.0.1:9092"],
                 "key_deserializer" : lambda x: x.decode("utf-8"),
-                # "value_deserializer" : lambda x: float(x),
+                "value_deserializer" : lambda x: float(x),
                 "group_id" : "group-1"
             }
         self.consumer = KafkaConsumer(**consumer_configs)
@@ -59,7 +59,7 @@ class PushNotificationBot():
             raw_messages = self.consumer.poll(2000)
 
             for topic_partition, messages in raw_messages.items():
-                print(messages)
+                # print(messages)
                 await self.process_messages(messages, topic_partition.topic)
 
     async def process_messages(self, messages, topic):
@@ -72,13 +72,16 @@ class PushNotificationBot():
                 self.r.set(f"{topic}:{ticker}", cur)
                 return
 
+            if ticker == 'ACB' and topic == 'price':
+                print(cur)
+
             prev = float(prev)
-            alert_chat_ids_lt = self.r.zrangebyscore(f"{topic}:{ticker}:lt", cur, '+inf')
+            alert_chat_ids_lt = self.r.zrangebyscore(f"alert:{topic.upper()}:{ticker}:lt", cur, '+inf')
             if len(alert_chat_ids_lt) > 0 and cur < prev:
                 await self.send_alerts(alert_chat_ids_lt, ticker, topic, cur, 0)
-            alert_chat_ids_gt = self.r.zrangebyscore(f"{topic}:{ticker}:gt", cur, '+inf')
+            alert_chat_ids_gt = self.r.zrangebyscore(f"alert:{topic.upper()}:{ticker}:gt", 0, cur)
             if len(alert_chat_ids_gt) > 0 and cur > prev:
-                await self.send_alerts(alert_chat_ids_gt, ticker, topic, cur, 1)
+                await self.send_alerts(alert_chat_ids_gt, ticker, cur, topic, 1)
             
             self.r.set(f"{topic}:{ticker}", cur)
 
