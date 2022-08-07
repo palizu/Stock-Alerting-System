@@ -85,7 +85,7 @@ class MarketDataProducer():
             logging.info("Sending: " + str(data_row))
             self.producer.send('market_data', value=data_row, key=data_row['Symbol'])
             if index % 100 == 0:
-                time.sleep(1)
+                time.sleep(3)
 
     def __del__(self):
         self.producer.close()

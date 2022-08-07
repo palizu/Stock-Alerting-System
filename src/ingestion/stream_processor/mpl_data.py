@@ -77,52 +77,52 @@ import time
 # write_api.write(config.influx_bucket, config.influx_org, points)
 
 # ---------------------------- gen past data -----------------------------------
-data = []
-with open("src/ingestion/stream_processor/processed_past_data.json", 'r') as f:
-    lines = f.readlines()
-    for line in lines:
-        line = json.loads(line)
-        row = [line['Symbol'], line['Open'], line['High'], line['Low'],
-                line['Close'], line['Volume'], line['Value'], line['day'], 
-                line['MA20'], line['MA50'], line['EMA12'], line['EMA26'], line['MACD'], 
-                line['SIGNAL_LINE'], line['Up_Change'], line['Down_Change'], line['RSI'], line['PARTITION_DATE']
-            ]
-        data.append(row)
+# data = []
+# with open("src/ingestion/stream_processor/processed_past_data.json", 'r') as f:
+#     lines = f.readlines()
+#     for line in lines:
+#         line = json.loads(line)
+#         row = [line['Symbol'], line['Open'], line['High'], line['Low'],
+#                 line['Close'], line['Volume'], line['Value'], line['day'], 
+#                 line['MA20'], line['MA50'], line['EMA12'], line['EMA26'], line['MACD'], 
+#                 line['SIGNAL_LINE'], line['Up_Change'], line['Down_Change'], line['RSI'], line['PARTITION_DATE']
+#             ]
+#         data.append(row)
 
-cols = ['Symbol', 'Open', 'High', 'Low', 'Close', 'Volume', 'Value', 
-                'day', 'MA20', 'MA50', 'EMA12', 'EMA26', 
-                'MACD', 'SIGNAL_LINE','Up_Change', 'Down_Change', 'RSI', 'PARTITION_DATE', 
-        ]
-new_df = pd.DataFrame(columns=cols, data = data)
+# cols = ['Symbol', 'Open', 'High', 'Low', 'Close', 'Volume', 'Value', 
+#                 'day', 'MA20', 'MA50', 'EMA12', 'EMA26', 
+#                 'MACD', 'SIGNAL_LINE','Up_Change', 'Down_Change', 'RSI', 'PARTITION_DATE', 
+#         ]
+# new_df = pd.DataFrame(columns=cols, data = data)
 
-c = ['Open', 'High', 'Low', 'Close', 'MA20', 'MA50', 'EMA12', 'EMA26', 
-     'MACD', 'SIGNAL_LINE','Up_Change', 'Down_Change']
+# c = ['Open', 'High', 'Low', 'Close', 'MA20', 'MA50', 'EMA12', 'EMA26', 
+#      'MACD', 'SIGNAL_LINE','Up_Change', 'Down_Change']
 
-for c in c:
-    new_df[c] = new_df[c] / 1000
+# for c in c:
+#     new_df[c] = new_df[c] / 1000
 
-df = new_df
+# df = new_df
 
-schema = (StructType()
-                .add(StructField("Symbol", StringType()))
-                .add(StructField("Open", FloatType()))
-                .add(StructField("High", FloatType()))
-                .add(StructField("Low", FloatType()))
-                .add(StructField("Close", FloatType()))
-                .add(StructField("Volume", FloatType()))
-                .add(StructField("Value", FloatType()))
-                .add(StructField("day", IntegerType()))
-                .add(StructField("MA20", FloatType()))
-                .add(StructField("MA50", FloatType()))
-                .add(StructField("EMA12", FloatType()))
-                .add(StructField("EMA26", FloatType()))
-                .add(StructField("MACD", FloatType()))
-                .add(StructField("SIGNAL_LINE", FloatType()))
-                .add(StructField("Up_Change", FloatType()))
-                .add(StructField("Down_Change", FloatType()))
-                .add(StructField("RSI", FloatType()))
-                .add(StructField("PARTITION_DATE", StringType()))
-            )
+# schema = (StructType()
+#                 .add(StructField("Symbol", StringType()))
+#                 .add(StructField("Open", FloatType()))
+#                 .add(StructField("High", FloatType()))
+#                 .add(StructField("Low", FloatType()))
+#                 .add(StructField("Close", FloatType()))
+#                 .add(StructField("Volume", FloatType()))
+#                 .add(StructField("Value", FloatType()))
+#                 .add(StructField("day", IntegerType()))
+#                 .add(StructField("MA20", FloatType()))
+#                 .add(StructField("MA50", FloatType()))
+#                 .add(StructField("EMA12", FloatType()))
+#                 .add(StructField("EMA26", FloatType()))
+#                 .add(StructField("MACD", FloatType()))
+#                 .add(StructField("SIGNAL_LINE", FloatType()))
+#                 .add(StructField("Up_Change", FloatType()))
+#                 .add(StructField("Down_Change", FloatType()))
+#                 .add(StructField("RSI", FloatType()))
+#                 .add(StructField("PARTITION_DATE", StringType()))
+#             )
 
 spark = (SparkSession
                     .builder
@@ -130,6 +130,8 @@ spark = (SparkSession
                     .appName("mpl_data")
                     .getOrCreate())
 
-spark_df = spark.createDataFrame(schema=schema, data=df)
-spark_df.show()
-spark_df.write.mode('overwrite').partitionBy("PARTITION_DATE").parquet('src/ingestion/stream_processor/past_data')
+# spark_df = spark.createDataFrame(schema=schema, data=df)
+# spark_df.show()
+# spark_df.write.mode('overwrite').partitionBy("PARTITION_DATE").parquet('src/ingestion/stream_processor/past_data')
+
+spark.read.parquet('src/ingestion/stream_processor/past_data').show()
