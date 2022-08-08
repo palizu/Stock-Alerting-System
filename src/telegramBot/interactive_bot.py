@@ -1,12 +1,31 @@
-from bdb import effective
-from distutils.debug import DEBUG
 import logging
 import bot_configs
-from telegram import Update
+from telegram import KeyboardButton, ReplyKeyboardMarkup, Update
 from telegram.ext import *
 import mysql.connector
 from mysql.connector import Error
+import redis
+import re
 
+float_pattern = re.compile("^(?:[1-9]\d*|0)?(?:\.\d+)?$")
+
+ADD_SYMBOL = "add_symbol"
+ADD_DIRECTION = "add_direction"
+ADD_THRESHOLD = "add_threshold"
+EXEC_ADD_COMMAND = "exec_add_command"
+
+REMOVE_SYMBOL = "remove_symbol"
+REMOVE_DIRECTION = "remove_direction"
+REMOVE_INDICATOR = "remove_indicator"
+UPDATE_THRESHOLD = "update_threshold"
+EXEC_REMOVE_COMMAND = "exec_remove_command"
+
+UPDATE_SYMBOL = "update_symbol"
+UPDATE_DIRECTION = "update_direction"
+UPDATE_INDICATOR = "update_indicator"
+EXEC_UPDATE_COMMAND = "exec_update_command"
+
+END_CONVERSATION = ConversationHandler.END
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -17,16 +36,16 @@ class InteractiveBot():
     def __init__(self) -> None:
         try: 
             connection = mysql.connector.connect(
-                host=bot_configs.host,
-                database=bot_configs.database,
-                port=bot_configs.port,
-                user=bot_configs.username,
-                password=bot_configs.password
+                host=bot_configs.mysql_host,
+                database=bot_configs.mysql_database,
+                port=bot_configs.mysql_port,
+                user=bot_configs.mysql_username,
+                password=bot_configs.mysql_password
             )
             if connection.is_connected():
                 self.connection = connection
                 logging.info(connection.get_server_info())
-                self.cursor = connection.cursor()
+                self.cursor = connection.cursor(buffered=True)
                 self.cursor.execute("select database();")
                 record = self.cursor.fetchone()
                 logging.info(f"You're connected to database: {record}")
@@ -34,135 +53,457 @@ class InteractiveBot():
         except Error as e:
             logging.error("Error while connecting to MySQL:\n" + e)
 
+        self.r = redis.Redis()
+        logging.info("Connected to Redis")
+        self.load_mysql_to_redis()
+
+        add_conv_handler = ConversationHandler(
+            entry_points=[CommandHandler("add", self.add_condition)],
+            states={
+                ADD_SYMBOL: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.add_symbol),],
+                ADD_DIRECTION:[MessageHandler(filters.TEXT & ~filters.COMMAND, self.add_direction),],
+                ADD_THRESHOLD: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.add_threshold),],
+                EXEC_ADD_COMMAND: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.exec_add_command),]
+            },
+            fallbacks=[CommandHandler("add", self.add_condition), CommandHandler("remove", self.remove_condition)]
+        )
+
+        remove_conv_handler = ConversationHandler(
+            entry_points=[CommandHandler("remove", self.remove_condition)],
+            states={
+                REMOVE_SYMBOL: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.remove_symbol),],
+                REMOVE_INDICATOR:[ MessageHandler(filters.TEXT & ~filters.COMMAND, self.remove_indicator),],
+                EXEC_REMOVE_COMMAND: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.exec_remove_command),]
+            },
+            fallbacks=[CommandHandler("remove", self.remove_condition)]
+        )
+
+        update_conv_handler = ConversationHandler(
+            entry_points=[CommandHandler("update", self.update_condition)],
+            states={
+                UPDATE_SYMBOL: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.update_symbol),],
+                UPDATE_INDICATOR:[ MessageHandler(filters.TEXT & ~filters.COMMAND, self.update_indicator),],
+                UPDATE_THRESHOLD:[ MessageHandler(filters.TEXT & ~filters.COMMAND, self.update_threshold),],
+                EXEC_UPDATE_COMMAND: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.exec_update_command),]
+            },
+            fallbacks=[CommandHandler("update", self.update_condition)]
+        )
+
         self.application = ApplicationBuilder().token(bot_configs.TOKEN).build()
-        self.application.add_handler(CommandHandler('start', self.start))
-        self.application.add_handler(CommandHandler('list', self.list_condition))
-        self.application.add_handler(CommandHandler('add', self.add_condition))
-        self.application.add_handler(CommandHandler('remove', self.remove_condition))
-        self.application.add_handler(MessageHandler(filters.COMMAND, self.unknown))
+        self.application.add_handler(add_conv_handler, 1)
+        self.application.add_handler(remove_conv_handler, 2)
+        self.application.add_handler(update_conv_handler, 3)
+        self.application.add_handler(CommandHandler('start', self.start), 0)
+        self.application.add_handler(CommandHandler('help', self.help), 0)
+        self.application.add_handler(CommandHandler('list', self.list_condition), 0)
+        self.application.add_handler(CommandHandler('cancel', self.cancel), 0)
+        self.application.add_handler(MessageHandler(filters.COMMAND & ~filters.Regex('^(\/add|\/start|\/list|\/remove|\/cancel|\/help|\/update)$'), self.command_unknown))
 
+    def load_mysql_to_redis(self):
+        self.r.flushall()
+        select_query = "SELECT * FROM user_alert_condition"
+        self.cursor.execute(select_query)
+        conditions = self.cursor.fetchall()
+        if conditions is None:
+            return
+        for condition in conditions:
+            (chat_id, ticker, indicator, threshold, direction) = condition
+            if direction == 0:
+                self.r.zadd(f'alert:{indicator.upper()}:{ticker}:lt', {chat_id : threshold})
+            else:
+                self.r.zadd(f'alert:{indicator.upper()}:{ticker}:gt', {chat_id : threshold})
 
-    async def start(self, update: Update, context: CallbackContext.DEFAULT_TYPE):
+        
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
         logging.info(f"Start command at chat: {chat_id}")
-        select_query = "SELECT * FROM user WHERE chat_id = %s"
-        self.cursor.execute(select_query, (chat_id,))
-        rows = self.cursor.fetchone()
-        
-        if rows is None:    
-            insert_query = "INSERT INTO user (chat_id) VALUES (%s)"
-            new_user_info = (chat_id,)
-            self.cursor.execute(insert_query, new_user_info)
-            self.connection.commit()
-            logging.info(f"New user added with chat id: {chat_id}")
         await context.bot.send_message(chat_id=chat_id, text=bot_configs.WELCOME_MESSAGE)
 
+    async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        chat_id = update.effective_chat.id
+        logging.info(f"Help command at chat: {chat_id}")
+        await context.bot.send_message(chat_id=chat_id, text=bot_configs.HELP_MESSAGE)
 
-    async def list_condition(self, update: Update, context: CallbackContext.DEFAULT_TYPE):
+
+    async def list_condition(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
         logging.info(f"List condition command at chat: {chat_id}")
         select_query = "SELECT * FROM user_alert_condition WHERE chat_id = %s"
         self.cursor.execute(select_query, (chat_id,))
-        row = self.cursor.fetchone()
+        rows = self.cursor.fetchall()
         
-        if row is None: 
+        if rows is None or len(rows) == 0: 
             message = bot_configs.NO_CONDITION_MESSAGE
             logging.info(f"List condition at chat id {chat_id}: Did not find any condition")
         else:
             message = "Your alert condition: \n"
-            symbol = row[1]
-            price_lower = row[2]
-            price_upper = row[3]
-            message = message + "\nTicker " + symbol.upper() + ":"
-            if price_upper is not None: 
-                message = message + "\n - Upper threshhold: " + str(price_upper)
-            if price_lower is not None: 
-                message = message + "\n - Lower threshhold: " + str(price_lower)
-            logging.info(f"List condition at chat id {chat_id}: Success")
+            for row in rows:
+                (chat_id, ticker, indicator, threshold, direction) = row
+                message = message + "\nTicker " + ticker.upper()
+                if direction == 0: 
+                    message = message + f" has lower boundary on {indicator}: " + str(threshold)
+                if direction == 1: 
+                    message = message +  f" has upper boundary: {indicator}: " + str(threshold)
         await context.bot.send_message(chat_id=chat_id, text=message)
+        logging.info(f"List condition at chat id {chat_id}: Success")
 
+# ----------------------------------- start of add conversation------------------------------------------------------------
+    async def add_condition(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        context.user_data.clear()
+        context.user_data['command'] = "ADD"
+        await update.message.reply_text("Select technical indicator to set condition on", 
+                reply_markup=ReplyKeyboardMarkup(bot_configs.ATTR_BUTTON, one_time_keyboard=True, resize_keyboard=True))
+        return ADD_SYMBOL
 
-    async def add_condition(self, update: Update, context: CallbackContext):
-        chat_id = update.effective_chat.id
-        args = context.args
-
-        if len(args) != 3:
-            message = "Invalid command arguments!\nThe syntax is: /add \{ticker\} \{upper/lower\} \{threshold\}"
-            await context.bot.send_message(chat_id=chat_id, text=message)
-            return
-
-        ticker = args[0].upper()
-        type = args[1].upper()
-        threshold = float(args[2])
-
-        if ticker.upper() not in bot_configs.SYMBOL_LIST:
-            message = bot_configs.UNSUPPORTED_TICKER_MSG + ticker
-            logging.info(f"User update condition failed at chat id {chat_id} -- REASON -- Ticker is not supported: {ticker}")
-        elif type not in bot_configs.TYPE_LIST:
-            message = bot_configs.UNSUPPORTED_CONDITION_MSG + type
-            logging.info(f"User update condition failed at chat id {chat_id} -- REASON -- Wrong condition rule: {type}")
-        elif threshold < 0:
-            message = bot_configs.NEGATIVE_THRESHOLD_MSG
-            logging.info(f"User update condition failed at chat id {chat_id} -- REASON -- Negative threshold")
+    async def add_symbol(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        text = update.message.text
+        if text.upper() in bot_configs.ATTR:
+            context.user_data['tech_indi'] = text.upper()
+            await update.message.reply_text("Select the stock code to set condition on")
+            return ADD_DIRECTION
         else:
-            select_query = "SELECT * FROM user_alert_condition WHERE chat_id = %s and ticker = %s"
-            self.cursor.execute(select_query, (chat_id, ticker))
+            await update.message.reply_text("Sorry, I didn't understand this technical indicator yet :<\nTry some others", 
+                reply_markup=ReplyKeyboardMarkup(bot_configs.ATTR_BUTTON, one_time_keyboard=True, resize_keyboard=True))
+            return ADD_SYMBOL
+
+    async def add_direction(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        text = update.message.text
+        if text.upper() in bot_configs.TICKERS:
+            context.user_data['symbol'] = text
+            await update.message.reply_text("Select the direction to send alert: ",
+                    reply_markup=ReplyKeyboardMarkup(bot_configs.DIRECTION_BUTTON, one_time_keyboard=True, resize_keyboard=True))
+            return ADD_THRESHOLD
+        else:
+            await update.message.reply_text("I am not support this stock yet :<\nTry some others")
+            return ADD_DIRECTION
+
+    async def add_threshold(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        text = update.message.text.strip().lower()
+        ticker = context.user_data['symbol']
+        indicator = context.user_data['tech_indi']
+        chat_id = update.effective_chat.id
+        if text== "greater than":
+            context.user_data['direction'] = 1
+            direction = 1
+            select_query = "SELECT * FROM user_alert_condition WHERE chat_id = %s and ticker = %s and indicator = %s and direction = %s"
+            self.cursor.execute(select_query, (chat_id, ticker, indicator, direction))
             row = self.cursor.fetchone()
             if row is None:
-                insert_query = f"INSERT INTO user_alert_condition (chat_id, ticker, {type}) values (%s, %s, %s)"
-                self.cursor.execute(insert_query, (chat_id, ticker, threshold))
-                self.connection.commit()
+                msg = f"Okay send alert when {context.user_data['tech_indi']} is {text} ... how much? Enter the threshold to complete the condition"
+                await update.message.reply_text(msg)
+                return EXEC_ADD_COMMAND
             else:
-                update_query = f"UPDATE user_alert_condition set {type} = %s where chat_id = %s and ticker = %s"
-                self.cursor.execute(update_query, (threshold, chat_id, ticker))
-                self.connection.commit()
+                msg = f"You have set this condition with threshold: {row[3]}"
+                await context.bot.send_message(chat_id=chat_id, text=msg)
+                return END_CONVERSATION
+        elif text == "less than":
+            context.user_data['direction'] = 0
+            direction = 0
+            select_query = "SELECT * FROM user_alert_condition WHERE chat_id = %s and ticker = %s and indicator = %s and direction = %s"
+            self.cursor.execute(select_query, (chat_id, ticker, indicator, direction))
+            row = self.cursor.fetchone()
+            if row is None:
+                msg = f"Okay send alert when {context.user_data['tech_indi']} is {text} ... how much? Enter the threshold to complete the condition"
+                await update.message.reply_text(msg)
+                return EXEC_ADD_COMMAND
+            else:
+                msg = f"You have set this condition with threshold: {row[3]}"
+                await context.bot.send_message(chat_id=chat_id, text=msg)
+                return END_CONVERSATION
+        else:
+            await update.message.reply_text("Wrong direction! Please use the two button below or type in \"less than\"/\"greater than\" in the chat.",
+                    reply_markup=ReplyKeyboardMarkup(bot_configs.DIRECTION_BUTTON,  one_time_keyboard=True, resize_keyboard=True))
+            return ADD_THRESHOLD
+
+    async def exec_add_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        text = update.message.text
+        if float_pattern.match(text):
+            threshold = float(text)
+            ticker = context.user_data['symbol'].upper()
+            direction = context.user_data['direction']
+            indicator = context.user_data['tech_indi'].upper()
+            chat_id = update.effective_chat.id
+            insert_query = f"INSERT INTO user_alert_condition (chat_id, ticker, indicator, threshold, direction) values (%s, %s, %s, %s, %s)"
+            self.cursor.execute(insert_query, (chat_id, ticker, indicator, threshold, direction))
+            self.connection.commit()
+            if direction == 1:
+                self.r.zadd(f"{indicator}:{ticker}:gt", {str(chat_id): threshold})
+            else:
+                self.r.zadd(f"{indicator}:{ticker}:lt", {str(chat_id): threshold})
             message = "Alert added successfully! Use /list to see all your alert"
-            logging.info(f"User updated condition at chat id {chat_id}: {' '.join(args)} -- Success")
-        await context.bot.send_message(chat_id=chat_id, text=message)
-
-
-    async def remove_condition(self, update: Update, context: CallbackContext):
-        chat_id = update.effective_chat.id
-        args = context.args
-        if len(args) != 2:
-            message = "Invalid command arguments!\nThe syntax is: /remove \{ticker\} \{price_upper/price_lower\} "
+            logging.info(f"User added condition at chat id {chat_id}: Success -- Detail: {ticker} - {indicator} - {bot_configs.DIRECTION_BUTTON[0][direction]} - {threshold}")
             await context.bot.send_message(chat_id=chat_id, text=message)
-            return
-
-        ticker = args[0].upper()
-        type = args[1].upper()
-
-        if ticker.upper() not in bot_configs.SYMBOL_LIST:
-            message = bot_configs.UNSUPPORTED_TICKER_MSG + ticker
-            logging.info(f"User remove condition failed at chat id {chat_id} -- REASON -- Ticker is not supported: {ticker}")
-        elif type not in bot_configs.TYPE_LIST:
-            message = bot_configs.UNSUPPORTED_CONDITION_MSG + type
-            logging.info(f"User remove condition failed at chat id {chat_id} -- REASON -- Wrong condition rule: {type}")
+            return END_CONVERSATION
         else:
-            select_query = "SELECT * FROM user_alert_condition WHERE chat_id = %s AND ticker = %s"
-            self.cursor.execute(select_query, (chat_id, ticker))
-            row = self.cursor.fetchone()
-            if row is None:
-                message = (bot_configs.NO_CONDITION_OM_TICKER_MESSAGE, (ticker,))
-                logging.info(f"User remove condition at chat id {chat_id} -- No condition on ticker")
-            else:
-                update_query = f"UPDATE user_alert_condition SET {type} = NULL WHERE chat_id = %s and ticker = %s"
-                self.cursor.execute(update_query, (chat_id, ticker))
-                self.connection.commit()
-                message = "Alert removed successfully! Use /list to see all your alert"
-                logging.info(f"User remove condition at chat id {chat_id}: {' '.join(args)} -- Success")
-        await context.bot.send_message(chat_id=chat_id, text=message)
+            await update.message.reply_text("I do not understand, the threshold should be a float number")
+            return EXEC_ADD_COMMAND
+# ------------------------------- end of add conversation ---------------------------------------------------
 
-    async def stop(self, update: Update, context: CallbackContext):
-        chat_id = update.effective_chat.chat_id
+
+# ------------------------------- start of update conversation ---------------------------------------------
+    async def update_condition(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        context.user_data.clear()
+        context.user_data['command'] = 'UPDATE'
+        chat_id = update.effective_chat.id
+        select_query = "SELECT distinct ticker FROM user_alert_condition WHERE chat_id = %s"
+        self.cursor.execute(select_query, (chat_id,))
+        rows = self.cursor.fetchall()
+        if rows is None:
+            await context.bot.send_message(chat_id=chat_id, text="You have not set up any condition yet.")
+            return END_CONVERSATION
+        else:
+            context.user_data['list_symbol'] = []
+            buttons = []
+            b = []
+            i = 0
+            for row in rows:
+                b.append(row[0])
+                if len(b) == 3:
+                    buttons.append(b)
+                    b = []
+                context.user_data['list_symbol'].append(row[0])
+            if len(b) != 0:
+                buttons.append(b)
+            await update.message.reply_text("Which stock do you want to update condition",
+                    reply_markup=ReplyKeyboardMarkup(buttons,  one_time_keyboard=True, resize_keyboard=True))
+            return UPDATE_SYMBOL
+
+    async def update_symbol(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        text = update.message.text.strip().upper()
+        if text not in context.user_data['list_symbol']:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=f"You have not set up any condition on {text} yet.")
+            return END_CONVERSATION
+        else:
+            context.user_data['symbol'] = text.upper()
+            select_query = "SELECT distinct indicator FROM user_alert_condition WHERE chat_id = %s and ticker = %s"
+            self.cursor.execute(select_query, (update.effective_chat.id, text))
+            rows = self.cursor.fetchall() 
+            context.user_data['list_indi'] = []
+            buttons = []
+            b = []
+            i = 0
+            for row in rows:
+                b.append(row[0])
+                if len(b) == 3:
+                    buttons.append(b)
+                    b = []
+                context.user_data['list_indi'].append(row[0])
+            if len(b) != 0:
+                buttons.append(b)
+            await update.message.reply_text(f"Which indicator on {text.upper()} do you want to update condition",
+                    reply_markup=ReplyKeyboardMarkup(buttons,  one_time_keyboard=True, resize_keyboard=True))
+            return UPDATE_INDICATOR
+
+    async def update_indicator(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        text = update.message.text.strip().upper()
+        if text not in context.user_data['list_indi']:
+            buttons = []
+            b = []
+            i = 0
+            for indi in context.user_data['list_indi']:
+                b.append(indi)
+                if len(b) == 3:
+                    buttons.append(b)
+                    b = []
+            if len(b) != 0:
+                buttons.append(b)
+            await update.message.reply_text(f"Hmm, Seems like {text.upper()} do not have condition on {text}. Try using buttons below", 
+                    reply_markup=ReplyKeyboardMarkup(buttons,  one_time_keyboard=True, resize_keyboard=True))
+            return UPDATE_INDICATOR
+        context.user_data['tech_indi'] = text
+        select_query = "SELECT distinct direction FROM user_alert_condition WHERE chat_id = %s and ticker = %s and indicator = %s"
+        self.cursor.execute(select_query, (update.effective_chat.id, context.user_data['symbol'], text))
+        rows = self.cursor.fetchall()
+        context.user_data['list_direction'] = []
+        buttons = []
+        b = []
+        i = 0
+        for row in rows:
+            b.append(bot_configs.DIRECTION_BUTTON[0][row[0]])
+            if len(b) == 3:
+                buttons.append(b)
+                b = []
+            context.user_data['list_direction'].append(bot_configs.DIRECTION_BUTTON[0][row[0]])
+        if len(b) != 0:
+                buttons.append(b)
+        await update.message.reply_text(f"Which direction on {text} of {context.user_data['symbol']} do you want to update condition", 
+                reply_markup=ReplyKeyboardMarkup(buttons,  one_time_keyboard=True, resize_keyboard=True))
+        return UPDATE_THRESHOLD
+
+    async def update_threshold(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        text = update.message.text.strip()
+        ticker = context.user_data['symbol']
+        indicator = context.user_data['tech_indi']
+        chat_id = update.effective_chat.id
+        if text not in context.user_data['list_direction']:
+            await update.message.reply_text("Seems like you have not set up condition like that! Please use the button(s) below or type in \"less than\"/\"greater than\" in the chat.",
+                    reply_markup=ReplyKeyboardMarkup(bot_configs.DIRECTION_BUTTON,  one_time_keyboard=True, resize_keyboard=True))
+            return UPDATE_THRESHOLD
+        if text == "greater than":
+            context.user_data['direction'] = 1
+        else:
+            context.user_data['direction'] = 0
+        msg = f"Finally, enter the threshold to complete the update process"
+        await update.message.reply_text(msg)
+        return EXEC_UPDATE_COMMAND
+        
+    async def exec_update_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        text = update.message.text.strip()
+        if float_pattern.match(text):
+            threshold = float(text)
+            ticker = context.user_data['symbol'].upper()
+            direction = context.user_data['direction']
+            indicator = context.user_data['tech_indi'].upper()
+            chat_id = update.effective_chat.id
+            update_query = f"UPDATE user_alert_condition set threshold = %s where chat_id = %s and ticker = %s and indicator = %s and direction = %s"
+            self.cursor.execute(update_query, (threshold, chat_id, ticker, indicator, direction))
+            self.connection.commit()
+            if direction == 1:
+                self.r.zrem(f"{indicator}:{ticker}:gt", chat_id)
+                self.r.zadd(f"{indicator}:{ticker}:gt", {str(chat_id): threshold})
+            else:
+                self.r.zrem(f"{indicator}:{ticker}:lt", chat_id)
+                self.r.zadd(f"{indicator}:{ticker}:lt", {str(chat_id): threshold})
+            message = "Alert updated successfully! Use /list to see all your alert"
+            logging.info(f"User updated condition at chat id {chat_id}: Success -- Detail: {ticker} - {indicator} - {bot_configs.DIRECTION_BUTTON[0][direction]} - {threshold}")
+            await context.bot.send_message(chat_id=chat_id, text=message)
+            return END_CONVERSATION
+        else:
+            await update.message.reply_text("I do not understand, the threshold should be a float number")
+            return EXEC_UPDATE_COMMAND
+# ------------------------------- end of update conversation ---------------------------------------------------
+
+
+# ------------------------------- start of remove conversation ---------------------------------------------
+    async def remove_condition(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        context.user_data.clear()
+        context.user_data['command'] = 'DELETE'
+        chat_id = update.effective_chat.id
+        select_query = "SELECT distinct ticker FROM user_alert_condition WHERE chat_id = %s"
+        self.cursor.execute(select_query, (chat_id,))
+        rows = self.cursor.fetchall()
+        if rows is None:
+            await context.bot.send_message(chat_id=chat_id, text="You have not set up any condition yet.")
+            return END_CONVERSATION
+        else:
+            context.user_data['list_symbol'] = []
+            buttons = []
+            b = []
+            i = 0
+            for row in rows:
+                b.append(row[0])
+                if len(b) == 3:
+                    buttons.append(b)
+                    b = []
+                context.user_data['list_symbol'].append(row[0])
+            if len(b) != 0:
+                buttons.append(b)
+            await update.message.reply_text("Which stock do you want to remove condition",
+                    reply_markup=ReplyKeyboardMarkup(buttons,  one_time_keyboard=True, resize_keyboard=True))
+            return REMOVE_SYMBOL
+
+    async def remove_symbol(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        text = update.message.text.strip().upper()
+        if text not in context.user_data['list_symbol']:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=f"You have not set up any condition on {text} yet.")
+            return END_CONVERSATION
+        else:
+            context.user_data['symbol'] = text.upper()
+            select_query = "SELECT distinct indicator FROM user_alert_condition WHERE chat_id = %s and ticker = %s"
+            self.cursor.execute(select_query, (update.effective_chat.id, text))
+            rows = self.cursor.fetchall() 
+            context.user_data['list_indi'] = []
+            buttons = []
+            b = []
+            i = 0
+            for row in rows:
+                b.append(row[0])
+                if len(b) == 3:
+                    buttons.append(b)
+                    b = []
+                context.user_data['list_indi'].append(row[0])
+            if len(b) != 0:
+                buttons.append(b)
+            await update.message.reply_text(f"Which indicator on {text.upper()} do you want to remove condition",
+                    reply_markup=ReplyKeyboardMarkup(buttons,  one_time_keyboard=True, resize_keyboard=True))
+            return REMOVE_INDICATOR
+
+    async def remove_indicator(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        text = update.message.text.strip().upper()
+        if text not in context.user_data['list_indi']:
+            buttons = []
+            b = []
+            i = 0
+            for indi in context.user_data['list_indi']:
+                b.append(indi)
+                if len(b) == 3:
+                    buttons.append(b)
+                    b = []
+            if len(b) != 0:
+                buttons.append(b)
+            await update.message.reply_text(f"Hmm, Seems like {text.upper()} do not have condition on {text}. Try using buttons below", 
+                    reply_markup=ReplyKeyboardMarkup(buttons,  one_time_keyboard=True, resize_keyboard=True))
+            return REMOVE_INDICATOR
+        context.user_data['tech_indi'] = text
+        select_query = "SELECT distinct direction FROM user_alert_condition WHERE chat_id = %s and ticker = %s and indicator = %s"
+        self.cursor.execute(select_query, (update.effective_chat.id, context.user_data['symbol'], text))
+        rows = self.cursor.fetchall()
+        context.user_data['list_direction'] = []
+        buttons = []
+        b = []
+        i = 0
+        for row in rows:
+            b.append(bot_configs.DIRECTION_BUTTON[0][row[0]])
+            if len(b) == 3:
+                buttons.append(b)
+                b = []
+            context.user_data['list_direction'].append(bot_configs.DIRECTION_BUTTON[0][row[0]])
+        if len(b) != 0:
+                buttons.append(b)
+        await update.message.reply_text(f"Which direction on {text} of {context.user_data['symbol']} do you want to remove condition", 
+                reply_markup=ReplyKeyboardMarkup(buttons,  one_time_keyboard=True, resize_keyboard=True))
+        return EXEC_REMOVE_COMMAND
+    
+    async def exec_remove_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        text = update.message.text.strip().lower()
+        if text not in context.user_data['list_direction']:
+            buttons = []
+            b = []
+            i = 0   
+            for direction in context.user_data['list_direction']:
+                b.append(direction)
+                if len(b) == 3:
+                    buttons.append(b)
+                    b = []
+            if len(b) != 0:
+                buttons.append(b)
+            await update.message.reply_text(f"Hmm, Seems like {text.upper()} is invalid or these is no condition. Try using buttons below", 
+                    reply_markup=ReplyKeyboardMarkup(buttons,  one_time_keyboard=True, resize_keyboard=True))
+            return EXEC_REMOVE_COMMAND
+        else:
+            ticker = context.user_data['symbol']
+            indicator = context.user_data['tech_indi']
+            direction = 0 if text == "less than" else 1
+            delete_query = f"DELETE FROM user_alert_condition WHERE chat_id = {update.effective_chat.id} AND ticker = '{ticker}' and indicator = '{indicator}' and direction = {direction}"
+            self.cursor.execute(delete_query)
+            self.connection.commit()
+            message = "Alert removed successfully! Use /list to see all your alert"
+            logging.info(f"User remove condition at chat id {update.effective_chat.id}: Success -- Detail: {ticker} - {indicator} - {bot_configs.DIRECTION_BUTTON[0][direction]}")
+            if direction == 1:
+                self.r.zrem(f"{indicator}:{ticker}:gt", update.effective_chat.id)
+            else:
+                self.r.zrem(f"{indicator}:{ticker}:lt", update.effective_chat.id)
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=message)
+            return END_CONVERSATION
+# -------------------------------------- end of remove conversation --------------------------------------
+
+    async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        chat_id = update.effective_chat.id
         logging.info(f"Stop receiving alert from chat: {chat_id}")
         select_query = f"SELECT * FROM user WHERE chat_id = {chat_id}"
         self.cursor.execute(select_query)
         row = self.cursor.fetchone()
         if row is not None:
-            delete_user_query = f"DELETE FROM user WHERE chat_id = {chat_id}"
-            self.cursor.execute(delete_user_query)
-            self.connection.commit()
             delete_condition_query = f"DELETE FROM user_alert_condition WHERE chat_id = {chat_id}"
             self.cursor.execute(delete_condition_query)
             self.connection.commit()
@@ -170,8 +511,9 @@ class InteractiveBot():
         message = "Bye have a good time"
         await context.bot.send_message(chat_id=chat_id, text=message)
 
-    async def unknown(self, update: Update, context: CallbackContext.DEFAULT_TYPE):
+    async def command_unknown(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=update.effective_chat.id, text="Sorry, I didn't understand that command.")
+
 
 
 if __name__ == '__main__':
